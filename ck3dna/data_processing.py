@@ -3,7 +3,8 @@
 Dataset discovery, cleaning and face alignment for the training pipeline.
 
 Expected raw layout -- one subdirectory per character, each containing one
-or more portrait images plus a single CK3 DNA text dump::
+or more portrait images plus a single CK3 DNA export (either a raw
+``.txt`` export or a genuine ``.ck3ruler`` save file)::
 
     portraits/
         some_character/
@@ -12,11 +13,12 @@ or more portrait images plus a single CK3 DNA text dump::
             character.txt   # CK3 DNA dump, see ck3dna.dna_parser
         another_character/
             photo.jpg
-            dna.txt
+            character.ck3ruler
 
-`clean_dirs` discards subdirectories missing either an image or a `.txt`
-DNA file. `get_paths` builds the ``[{"dna": path, "images": [paths, ...]}]``
-list consumed by the dataset classes below.
+`clean_dirs` discards subdirectories missing either an image or a DNA
+file (`.txt` or `.ck3ruler`). `get_paths` builds the
+``[{"dna": path, "images": [paths, ...]}]`` list consumed by the dataset
+classes below.
 """
 from __future__ import annotations
 
@@ -33,15 +35,20 @@ from torchvision.datasets import ImageFolder
 from .alignment import align_face
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
+# CK3 DNA labels may be either a raw text export (``.txt``, e.g. a
+# `ruler_designer_<id>=` Discord/clipboard export) or a genuine Ruler
+# Designer save file (``.ck3ruler``) -- `ck3dna.dna_parser.dna_ToTensor`
+# auto-detects which wrapper shape a file uses regardless of its suffix.
+DNA_SUFFIXES = {".txt", ".ck3ruler"}
 
 
 def clean_dirs(directory) -> None:
-    """Remove subdirectories of `directory` lacking an image or a .txt DNA file."""
+    """Remove subdirectories of `directory` lacking an image or a DNA file."""
     directory = Path(directory)
     for sub in sorted(p for p in directory.iterdir() if p.is_dir()):
         children = list(sub.iterdir())
         has_image = any(p.suffix.lower() in IMAGE_SUFFIXES for p in children)
-        has_dna = any(p.suffix.lower() == ".txt" for p in children)
+        has_dna = any(p.suffix.lower() in DNA_SUFFIXES for p in children)
         if not (has_image and has_dna):
             shutil.rmtree(sub)
 
@@ -53,7 +60,7 @@ def get_paths(directory) -> List[Dict]:
     for sub in sorted(p for p in directory.iterdir() if p.is_dir()):
         children = list(sub.iterdir())
         images = sorted(p for p in children if p.suffix.lower() in IMAGE_SUFFIXES)
-        dna_files = sorted(p for p in children if p.suffix.lower() == ".txt")
+        dna_files = sorted(p for p in children if p.suffix.lower() in DNA_SUFFIXES)
         if images and dna_files:
             entries.append({"dna": dna_files[0], "images": images})
     return entries

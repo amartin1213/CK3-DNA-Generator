@@ -1,27 +1,853 @@
 {
-  "head_width": ["narrow", "average", "wide"],
-  "head_profile": ["flat", "average", "protruding"],
-  "face_shape": ["oval", "round", "square", "heart", "long", "diamond"],
-  "forehead_height": ["low", "average", "high"],
-  "forehead_width": ["narrow", "average", "wide"],
-  "brow_height": ["low", "average", "high"],
-  "eye_shape": ["almond", "round", "hooded", "downturned", "upturned"],
-  "eye_distance": ["close", "average", "wide"],
-  "eye_angle": ["downturned", "neutral", "upturned"],
-  "eye_color": ["brown", "blue", "green", "hazel", "gray", "amber"],
-  "nose_size": ["small", "average", "large"],
-  "nose_shape": ["straight", "roman", "button", "hooked", "flat", "upturned"],
-  "nose_width": ["narrow", "average", "wide"],
-  "mouth_size": ["small", "average", "large"],
-  "lip_thickness": ["thin", "average", "full"],
-  "mouth_corner": ["downturned", "neutral", "upturned"],
-  "chin_shape": ["pointed", "round", "square", "cleft"],
-  "chin_size": ["small", "average", "large"],
-  "cheekbones": ["low", "average", "high"],
-  "cheek_fullness": ["hollow", "average", "full"],
-  "jaw_shape": ["narrow", "average", "wide", "square"],
-  "ear_size": ["small", "average", "large"],
-  "skin_tone": ["pale", "fair", "olive", "tan", "brown", "dark"],
-  "hair_color": ["black", "brown", "blonde", "red", "gray", "white"],
-  "hair_type": ["straight", "wavy", "curly", "coily", "bald"]
+  "_meta": {
+    "source": "Derived from real Crusader Kings 3 Ruler Designer exports (85 sample files: .ck3ruler save files + raw ruler_designer_<id> text exports). Category lists reflect only the values observed in these samples and may not be fully exhaustive of every value the game can produce.",
+    "num_samples": 85,
+    "color_genes": [
+      "hair_color",
+      "skin_color",
+      "eye_color"
+    ]
+  },
+  "genes": {
+    "gene_chin_forward": [
+      "chin_forward_pos",
+      "chin_forward_neg"
+    ],
+    "gene_chin_height": [
+      "chin_height_pos",
+      "chin_height_neg"
+    ],
+    "gene_chin_width": [
+      "chin_width_pos",
+      "chin_width_neg"
+    ],
+    "gene_eye_angle": [
+      "eye_angle_pos",
+      "eye_angle_neg"
+    ],
+    "gene_eye_depth": [
+      "eye_depth_pos",
+      "eye_depth_neg"
+    ],
+    "gene_eye_height": [
+      "eye_height_pos",
+      "eye_height_neg"
+    ],
+    "gene_eye_distance": [
+      "eye_distance_pos",
+      "eye_distance_neg"
+    ],
+    "gene_eye_shut": [
+      "eye_shut_pos",
+      "eye_shut_neg"
+    ],
+    "gene_forehead_angle": [
+      "forehead_angle_pos",
+      "forehead_angle_neg"
+    ],
+    "gene_forehead_brow_height": [
+      "forehead_brow_height_pos",
+      "forehead_brow_height_neg"
+    ],
+    "gene_forehead_roundness": [
+      "forehead_roundness_pos",
+      "forehead_roundness_neg"
+    ],
+    "gene_forehead_width": [
+      "forehead_width_pos",
+      "forehead_width_neg"
+    ],
+    "gene_forehead_height": [
+      "forehead_height_pos",
+      "forehead_height_neg"
+    ],
+    "gene_head_height": [
+      "head_height_pos",
+      "head_height_neg"
+    ],
+    "gene_head_width": [
+      "head_width_pos",
+      "head_width_neg"
+    ],
+    "gene_head_profile": [
+      "head_profile_pos",
+      "head_profile_neg"
+    ],
+    "gene_head_top_height": [
+      "head_top_height_pos",
+      "head_top_height_neg"
+    ],
+    "gene_head_top_width": [
+      "head_top_width_pos",
+      "head_top_width_neg"
+    ],
+    "gene_jaw_angle": [
+      "jaw_angle_pos",
+      "jaw_angle_neg"
+    ],
+    "gene_jaw_forward": [
+      "jaw_forward_pos",
+      "jaw_forward_neg"
+    ],
+    "gene_jaw_height": [
+      "jaw_height_pos",
+      "jaw_height_neg"
+    ],
+    "gene_jaw_width": [
+      "jaw_width_pos",
+      "jaw_width_neg"
+    ],
+    "gene_mouth_corner_depth": [
+      "mouth_corner_depth_pos",
+      "mouth_corner_depth_neg"
+    ],
+    "gene_mouth_corner_height": [
+      "mouth_corner_height_pos",
+      "mouth_corner_height_neg"
+    ],
+    "gene_mouth_forward": [
+      "mouth_forward_pos",
+      "mouth_forward_neg"
+    ],
+    "gene_mouth_height": [
+      "mouth_height_pos",
+      "mouth_height_neg"
+    ],
+    "gene_mouth_width": [
+      "mouth_width_pos",
+      "mouth_width_neg"
+    ],
+    "gene_mouth_upper_lip_size": [
+      "mouth_upper_lip_size_pos",
+      "mouth_upper_lip_size_neg"
+    ],
+    "gene_mouth_lower_lip_size": [
+      "mouth_lower_lip_size_pos",
+      "mouth_lower_lip_size_neg"
+    ],
+    "gene_mouth_open": [
+      "mouth_open_pos",
+      "mouth_open_neg"
+    ],
+    "gene_neck_length": [
+      "neck_length_pos",
+      "neck_length_neg"
+    ],
+    "gene_neck_width": [
+      "neck_width_pos",
+      "neck_width_neg"
+    ],
+    "gene_bs_cheek_forward": [
+      "cheek_forward_pos",
+      "cheek_forward_neg"
+    ],
+    "gene_bs_cheek_height": [
+      "cheek_height_neg",
+      "cheek_height_pos"
+    ],
+    "gene_bs_cheek_width": [
+      "cheek_width_neg",
+      "cheek_width_pos"
+    ],
+    "gene_bs_ear_angle": [
+      "ear_angle_pos",
+      "ear_angle_neg"
+    ],
+    "gene_bs_ear_inner_shape": [
+      "ear_inner_shape_pos"
+    ],
+    "gene_bs_ear_bend": [
+      "ear_lower_bend_pos",
+      "ear_both_bend_pos",
+      "ear_upper_bend_pos"
+    ],
+    "gene_bs_ear_outward": [
+      "ear_outward_pos",
+      "ear_outward_neg"
+    ],
+    "gene_bs_ear_size": [
+      "ear_size_pos",
+      "ear_size_neg"
+    ],
+    "gene_bs_eye_corner_depth": [
+      "eye_corner_depth_pos",
+      "eye_corner_depth_neg"
+    ],
+    "gene_bs_eye_fold_shape": [
+      "eye_fold_shape_neg",
+      "eye_fold_shape_neg_02",
+      "eye_fold_shape_pos"
+    ],
+    "gene_bs_eye_size": [
+      "eye_size_neg",
+      "eye_size_pos"
+    ],
+    "gene_bs_eye_upper_lid_size": [
+      "eye_upper_lid_size_pos",
+      "eye_upper_lid_size_neg",
+      "eye_upper_lid_size_pos_02"
+    ],
+    "gene_bs_forehead_brow_curve": [
+      "forehead_brow_curve_neg",
+      "forehead_brow_curve_pos"
+    ],
+    "gene_bs_forehead_brow_forward": [
+      "forehead_brow_forward_pos",
+      "forehead_brow_forward_neg"
+    ],
+    "gene_bs_forehead_brow_inner_height": [
+      "forehead_brow_inner_height_neg",
+      "forehead_brow_inner_height_pos"
+    ],
+    "gene_bs_forehead_brow_outer_height": [
+      "forehead_brow_outer_height_pos",
+      "forehead_brow_outer_height_neg"
+    ],
+    "gene_bs_forehead_brow_width": [
+      "forehead_brow_width_pos",
+      "forehead_brow_width_neg"
+    ],
+    "gene_bs_jaw_def": [
+      "jaw_def_pos",
+      "jaw_def_neg"
+    ],
+    "gene_bs_mouth_lower_lip_def": [
+      "mouth_lower_lip_def_pos"
+    ],
+    "gene_bs_mouth_lower_lip_full": [
+      "mouth_lower_lip_full_pos",
+      "mouth_lower_lip_full_neg"
+    ],
+    "gene_bs_mouth_lower_lip_pad": [
+      "mouth_lower_lip_pad_neg",
+      "mouth_lower_lip_pad_pos"
+    ],
+    "gene_bs_mouth_lower_lip_width": [
+      "mouth_lower_lip_width_pos",
+      "mouth_lower_lip_width_neg"
+    ],
+    "gene_bs_mouth_philtrum_def": [
+      "mouth_philtrum_def_pos"
+    ],
+    "gene_bs_mouth_philtrum_shape": [
+      "mouth_philtrum_shape_pos",
+      "mouth_philtrum_shape_neg"
+    ],
+    "gene_bs_mouth_philtrum_width": [
+      "mouth_philtrum_width_pos",
+      "mouth_philtrum_width_neg"
+    ],
+    "gene_bs_mouth_upper_lip_def": [
+      "mouth_upper_lip_def_pos"
+    ],
+    "gene_bs_mouth_upper_lip_full": [
+      "mouth_upper_lip_full_neg",
+      "mouth_upper_lip_full_pos"
+    ],
+    "gene_bs_mouth_upper_lip_profile": [
+      "mouth_upper_lip_profile_pos",
+      "mouth_upper_lip_profile_neg"
+    ],
+    "gene_bs_mouth_upper_lip_width": [
+      "mouth_upper_lip_width_neg",
+      "mouth_upper_lip_width_pos"
+    ],
+    "gene_bs_nose_forward": [
+      "nose_forward_pos",
+      "nose_forward_neg"
+    ],
+    "gene_bs_nose_height": [
+      "nose_height_neg",
+      "nose_height_pos"
+    ],
+    "gene_bs_nose_length": [
+      "nose_length_pos",
+      "nose_length_neg"
+    ],
+    "gene_bs_nose_nostril_height": [
+      "nose_nostril_height_neg",
+      "nose_nostril_height_pos"
+    ],
+    "gene_bs_nose_nostril_width": [
+      "nose_nostril_width_neg",
+      "nose_nostril_width_pos"
+    ],
+    "gene_bs_nose_profile": [
+      "nose_profile_neg",
+      "nose_profile_aquiline_01",
+      "nose_profile_pos",
+      "nose_profile_hawk",
+      "nose_profile_aquiline_02",
+      "nose_profile_brody_01",
+      "nose_profile_hawk_pos"
+    ],
+    "gene_bs_nose_ridge_angle": [
+      "nose_ridge_angle_pos",
+      "nose_ridge_angle_neg"
+    ],
+    "gene_bs_nose_ridge_width": [
+      "nose_ridge_width_pos",
+      "nose_ridge_width_neg"
+    ],
+    "gene_bs_nose_size": [
+      "nose_size_neg",
+      "nose_size_pos"
+    ],
+    "gene_bs_nose_tip_angle": [
+      "nose_tip_angle_pos",
+      "nose_tip_angle_neg"
+    ],
+    "gene_bs_nose_tip_forward": [
+      "nose_tip_forward_neg",
+      "nose_tip_forward_pos"
+    ],
+    "gene_bs_nose_tip_width": [
+      "nose_tip_width_pos",
+      "nose_tip_width_neg"
+    ],
+    "face_detail_cheek_def": [
+      "cheek_def_02",
+      "cheek_def_01"
+    ],
+    "face_detail_cheek_fat": [
+      "cheek_fat_03_pos",
+      "cheek_fat_01_neg",
+      "cheek_fat_01_pos",
+      "cheek_fat_02_pos",
+      "cheek_fat_04_pos"
+    ],
+    "face_detail_chin_cleft": [
+      "chin_cleft",
+      "chin_dimple"
+    ],
+    "face_detail_chin_def": [
+      "chin_def_02",
+      "chin_def_neg",
+      "chin_def"
+    ],
+    "face_detail_eye_lower_lid_def": [
+      "eye_lower_lid_def",
+      "eye_lower_lid_def_02"
+    ],
+    "face_detail_eye_socket": [
+      "eye_socket_color_01",
+      "eye_socket_03",
+      "eye_socket_01",
+      "eye_socket_color_03",
+      "eye_socket_02",
+      "eye_socket_color_02"
+    ],
+    "face_detail_nasolabial": [
+      "nasolabial_03",
+      "nasolabial_02",
+      "nasolabial_04",
+      "nasolabial_01"
+    ],
+    "face_detail_nose_ridge_def": [
+      "nose_ridge_def_pos",
+      "nose_ridge_def_neg",
+      "nose_ridge_def_02_pos"
+    ],
+    "face_detail_nose_tip_def": [
+      "nose_tip_def",
+      "nose_tip_def_02"
+    ],
+    "face_detail_temple_def": [
+      "temple_def"
+    ],
+    "expression_brow_wrinkles": [
+      "brow_wrinkles_02",
+      "brow_wrinkles_01",
+      "brow_wrinkles_03",
+      "brow_wrinkles_04"
+    ],
+    "expression_eye_wrinkles": [
+      "eye_wrinkles_01",
+      "eye_wrinkles_03",
+      "eye_wrinkles_02"
+    ],
+    "expression_forehead_wrinkles": [
+      "forehead_wrinkles_01",
+      "forehead_wrinkles_02",
+      "forehead_wrinkles_03"
+    ],
+    "expression_other": [
+      "cheek_wrinkles_both_01",
+      "nose_wrinkles_01",
+      "cheek_wrinkles_right_01",
+      "cheek_wrinkles_left_01"
+    ],
+    "complexion": [
+      "complexion_beauty_1",
+      "complexion_2af",
+      "complexion_1",
+      "complexion_42",
+      "complexion_16a",
+      "complexion_1af",
+      "complexion_smooth_1",
+      "complexion_14",
+      "complexion_10",
+      "complexion_13a",
+      "complexion_16",
+      "complexion_6",
+      "complexion_4",
+      "complexion_47",
+      "complexion_20",
+      "complexion_50",
+      "complexion_40",
+      "complexion_13",
+      "complexion_27",
+      "complexion_2",
+      "complexion_33",
+      "complexion_11",
+      "complexion_31"
+    ],
+    "gene_height": [
+      "normal_height"
+    ],
+    "gene_bs_body_type": [
+      "body_fat_head_fat_low",
+      "body_fat_head_fat_full",
+      "body_fat_head_fat_medium"
+    ],
+    "gene_bs_body_shape": [
+      "body_shape_average",
+      "body_shape_hourglass_half",
+      "body_shape_average_clothed",
+      "body_shape_rectangle_half",
+      "body_shape_pear_half",
+      "body_shape_apple_half",
+      "body_shape_hourglass_full",
+      "body_shape_triangle_half"
+    ],
+    "gene_bs_bust": [
+      "bust_clothes",
+      "bust_shape_1_half",
+      "bust_default",
+      "bust_shape_3_full",
+      "bust_shape_1_full",
+      "bust_shape_2_full",
+      "bust_shape_2_half",
+      "bust_shape_3_half"
+    ],
+    "gene_age": [
+      "old_beauty_1",
+      "old_4",
+      "old_1",
+      "old_2",
+      "old_3"
+    ],
+    "gene_eyebrows_shape": [
+      "avg_spacing_lower_thickness",
+      "avg_spacing_low_thickness",
+      "far_spacing_lower_thickness",
+      "avg_spacing_avg_thickness",
+      "far_spacing_low_thickness",
+      "close_spacing_lower_thickness"
+    ],
+    "gene_eyebrows_fullness": [
+      "layer_2_avg_thickness",
+      "layer_2_low_thickness",
+      "layer_2_lower_thickness",
+      "layer_2_high_thickness"
+    ],
+    "gene_body_hair": [
+      "body_hair_sparse_low_stubble",
+      "body_hair_sparse",
+      "body_hair_avg",
+      "body_hair_sparse_lower_stubble",
+      "body_hair_avg_lower_stubble",
+      "body_hair_dense"
+    ],
+    "gene_hair_type": [
+      "hair_straight",
+      "hair_wavy",
+      "hair_curly"
+    ],
+    "gene_baldness": [
+      "no_baldness",
+      "male_pattern_baldness"
+    ],
+    "gene_face_dacals": [
+      "no_face_dacal",
+      "face_dacal_10",
+      "face_dacal_09",
+      "face_dacal_08",
+      "face_dacal_04",
+      "face_dacal_05",
+      "face_dacal_06"
+    ],
+    "eye_accessory": [
+      "normal_eyes",
+      "bloodshot_eyes"
+    ],
+    "teeth_accessory": [
+      "normal_teeth",
+      "no_teeth"
+    ],
+    "eyelashes_accessory": [
+      "normal_eyelashes",
+      "no_eyelashes",
+      "dark_eyelashes"
+    ],
+    "gene_dragon": [
+      "human_body"
+    ],
+    "gene_dragon_shadow": [
+      "no_shadow"
+    ],
+    "gene_dragon_saddle": [
+      "no_saddle"
+    ],
+    "gene_dragon_aging": [
+      "non_dragon_aging"
+    ],
+    "gene_camera_zoom": [
+      "no_camera_zoom"
+    ],
+    "gene_dragon_size": [
+      "non_dragon_size"
+    ],
+    "gene_dragon_primary_color_hue": [
+      "dragon_primary_color_hue"
+    ],
+    "gene_dragon_primary_color_value": [
+      "dragon_primary_color_value"
+    ],
+    "gene_dragon_secondary_hue": [
+      "dragon_secondary_hue"
+    ],
+    "gene_dragon_secondary_value": [
+      "dragon_secondary_value"
+    ],
+    "gene_dragon_tertiary_hue": [
+      "dragon_tertiary_hue"
+    ],
+    "gene_dragon_tertiary_value": [
+      "dragon_tertiary_value"
+    ],
+    "gene_dragon_eye_color_hue": [
+      "dragon_eye_color_hue"
+    ],
+    "gene_dragon_eye_color_value": [
+      "dragon_eye_color_value"
+    ],
+    "gene_dragon_horn_color_hue": [
+      "dragon_horn_color_hue"
+    ],
+    "gene_dragon_horn_color_value": [
+      "dragon_horn_color_value"
+    ],
+    "gene_dragon_brow_width": [
+      "dragon_brow_width"
+    ],
+    "gene_dragon_cheek_width": [
+      "dragon_cheek_width"
+    ],
+    "gene_dragon_chin_profile": [
+      "dragon_chin_profile"
+    ],
+    "gene_dragon_crest_depth": [
+      "dragon_crest_depth"
+    ],
+    "gene_dragon_head_roundness": [
+      "dragon_head_roundness"
+    ],
+    "gene_dragon_horns_eyebrow_length": [
+      "dragon_horns_eyebrow_length"
+    ],
+    "gene_dragon_main_horn_shape": [
+      "dragon_horns_drogon"
+    ],
+    "gene_dragon_jaw_width": [
+      "dragon_jaw_width"
+    ],
+    "gene_dragon_lower_jaw_height": [
+      "dragon_lower_jaw_height"
+    ],
+    "gene_dragon_lower_jaw_width": [
+      "dragon_lower_jaw_width"
+    ],
+    "gene_dragon_old_neck": [
+      "dragon_old_neck"
+    ],
+    "gene_dragon_outer_brow_height": [
+      "dragon_outer_brow_height"
+    ],
+    "gene_dragon_snout_height": [
+      "dragon_snout_height"
+    ],
+    "gene_dragon_snout_length": [
+      "dragon_snout_length"
+    ],
+    "gene_dragon_snout_profile": [
+      "dragon_snout_profile"
+    ],
+    "gene_dragon_snout_width": [
+      "dragon_snout_width"
+    ],
+    "gene_dragon_upper_jaw_width": [
+      "dragon_upper_jaw_width"
+    ],
+    "gene_dragon_back_spike_size": [
+      "dragon_back_spike_size"
+    ],
+    "gene_dragon_center_fin_size": [
+      "dragon_center_fin_size"
+    ],
+    "gene_dragon_horns_eyebrow": [
+      "dragon_horns_eyebrow"
+    ],
+    "gene_dragon_neck_spike_size": [
+      "dragon_neck_spike_size"
+    ],
+    "gene_dragon_side_fin_size": [
+      "dragon_side_fin_size"
+    ],
+    "gene_dragon_snout_end_width": [
+      "dragon_snout_end_width"
+    ],
+    "gene_dragon_neck_length": [
+      "dragon_neck_length"
+    ],
+    "gene_dragon_tail_length": [
+      "dragon_tail_length"
+    ],
+    "gene_dragon_metallic_scales_strength": [
+      "dragon_scales_default",
+      "dragon_scales_metallic"
+    ],
+    "gene_dragon_wounded": [
+      "dragon_wounded",
+      "dragon_scarred"
+    ],
+    "gene_dragon_body_shading": [
+      "dragon_body_shading_lower_black",
+      "dragon_body_shading_lower_secondary"
+    ],
+    "gene_dragon_wings_shading": [
+      "dragon_wings_shading_back_black",
+      "dragon_wings_shading_back_white",
+      "dragon_wings_shading_back_secondary"
+    ],
+    "skin_color_saturation": [
+      "vanilla_skin_saturation",
+      "skin_color_saturation"
+    ],
+    "eye_color_saturation": [
+      "eye_color_saturation",
+      "vanilla_eye_saturation"
+    ],
+    "gene_bs_eye_height_inside": [
+      "eye_height_inside_neg",
+      "eye_height_inside_pos",
+      "vanilla_eye_height_inside"
+    ],
+    "gene_bs_eye_height_outisde": [
+      "eye_height_outisde_pos",
+      "eye_height_outisde_neg",
+      "vanilla_eye_height_outisde"
+    ],
+    "gene_bs_ear_lobe": [
+      "ear_lobe_fused",
+      "vanilla_ear_lobe",
+      "ear_lobe_detached"
+    ],
+    "gene_bs_nose_central_width": [
+      "nose_central_width_pos",
+      "nose_central_width_neg",
+      "vanilla_nose_central_width"
+    ],
+    "gene_bs_nose_septum_width": [
+      "nose_septum_width_pos",
+      "nose_septum_width_neg",
+      "vanilla_nose_septum_width"
+    ],
+    "gene_bs_mouth_lower_lip_profile": [
+      "lower_lip_profile",
+      "vanilla_lower_lip_profile"
+    ],
+    "gene_bs_eye_outer_width": [
+      "eye_outer_width",
+      "vanilla_eye_outer_width"
+    ],
+    "gene_bs_head_asymmetry_1": [
+      "head_asymmetry_1",
+      "head_asymmetry_7",
+      "head_asymmetry_4",
+      "vanilla_head_asymmetry_1",
+      "head_asymmetry_3",
+      "head_asymmetry_8",
+      "head_asymmetry_10",
+      "head_asymmetry_5",
+      "head_asymmetry_2",
+      "head_asymmetry_9"
+    ],
+    "gene_bs_mouth_center_curve": [
+      "mouth_center_curve_max",
+      "vanilla_mouth_center_curve",
+      "mouth_center_curve_min"
+    ],
+    "gene_bs_eyebrow_straight": [
+      "eyebrow_straight",
+      "vanilla_eyebrow_straight"
+    ],
+    "gene_bs_head_shape": [
+      "vanilla_head_round_shape",
+      "head_archetype_shape_03",
+      "head_round_shape",
+      "head_archetype_shape_07",
+      "head_archetype_shape_05",
+      "head_archetype_shape_02",
+      "head_archetype_shape_04"
+    ],
+    "gene_bs_nose_septum_height": [
+      "nose_septum_height",
+      "vanilla_nose_septum_height"
+    ],
+    "gene_bs_head_lower_height": [
+      "head_lower_height_max",
+      "head_lower_height_min",
+      "vanilla_head_lower_height"
+    ],
+    "gene_bs_nose_flared_nostril": [
+      "nose_flared_nostril",
+      "vanilla_nose_flared_nostril"
+    ],
+    "gene_bs_mouth_upper_lip_forward": [
+      "mouth_upper_lip_forward",
+      "vanilla_upper_lip_forward"
+    ],
+    "gene_bs_mouth_lower_lip_forward": [
+      "mouth_lower_lip_forward",
+      "vanilla_lower_lip_forward"
+    ],
+    "gene_bs_nose_swollen": [
+      "nose_swollen",
+      "vanilla_nose_swollen"
+    ],
+    "gene_bs_ears_fantasy": [
+      "vanilla_ears_fantasy",
+      "ears_fantasy"
+    ],
+    "gene_bs_mouth_glamour_lips": [
+      "mouth_glamour_lips",
+      "vanilla_mouth_glamour_lips"
+    ],
+    "face_detail_eye_upper_lid_def": [
+      "upper_lid_def_2",
+      "upper_lid_def",
+      "vanilla_upper_lid_def"
+    ],
+    "gene_eyebrow_inner_width": [
+      "eyebrow_inner_width_max",
+      "eyebrow_inner_width_min",
+      "vanilla_eyebrow_inner_width"
+    ],
+    "gene_bs_eye_lower_lid_size": [
+      "eye_lower_lid_size",
+      "vanilla_eye_lower_lid_size"
+    ],
+    "gene_bs_eye_shape": [
+      "eye_shape_04",
+      "vanilla_eye_shape",
+      "eye_shape_01",
+      "eye_shape_02",
+      "eye_shape_03"
+    ],
+    "gene_no_portrait": [
+      "normal_portrait"
+    ],
+    "hair_aging": [
+      "late_hair_aging",
+      "vanilla_hair_aging",
+      "no_hair_aging"
+    ],
+    "hairstyles": [
+      "sp4_western_hairstyles",
+      "all_hairstyles",
+      "agot_all_hairstyles",
+      "western_hairstyles_curly",
+      "fp2_hairstyles_iberian_christian_wavy",
+      "tgp_southeast_hairstyles",
+      "western_hairstyles_wavy",
+      "western_hairstyles_straight",
+      "fp1_hairstyles_straight"
+    ],
+    "clothes": [
+      "western_bedchamber",
+      "most_clothes"
+    ],
+    "gene_dragon_primary_color_saturation": [
+      "dragon_primary_color_saturation"
+    ],
+    "gene_dragon_secondary_saturation": [
+      "dragon_secondary_saturation"
+    ],
+    "gene_dragon_tertiary_saturation": [
+      "dragon_tertiary_saturation"
+    ],
+    "gene_dragon_eye_color_saturation": [
+      "dragon_eye_color_saturation"
+    ],
+    "gene_dragon_horn_color_saturation": [
+      "dragon_horn_color_saturation"
+    ],
+    "gene_dragon_fire_color": [
+      "gene_dragon_fire_color_automatic"
+    ],
+    "gene_dragon_fire_smoke": [
+      "gene_dragon_fire_smoke_automatic"
+    ],
+    "gene_dragon_scale_shadows": [
+      "dragon_scale_shadows_default"
+    ],
+    "gene_dragon_scale_highlights": [
+      "dragon_scale_highlights_default"
+    ],
+    "gene_dragon_body_pattern": [
+      "dragon_body_pattern_stripes_1_black"
+    ],
+    "gene_kraken": [
+      "no_kraken"
+    ],
+    "ptr_gene_bust_scale_clothed": [
+      "ptr_gene_bust_base"
+    ],
+    "gene_beauty_details": [
+      "beauty_details"
+    ],
+    "beards": [
+      "no_beard",
+      "ep3_beards_curly",
+      "fp3_iranian_beards_straight"
+    ],
+    "skin_color_hue_long_night": [
+      "vanilla_skin_color_hue_long_night"
+    ],
+    "skin_color_saturation_long_night": [
+      "vanilla_skin_color_saturation_long_night"
+    ],
+    "skin_color_value_long_night": [
+      "vanilla_skin_color_value_long_night"
+    ],
+    "eye_color_hue_long_night": [
+      "vanilla_eye_color_hue_long_night"
+    ],
+    "eye_color_saturation_long_night": [
+      "vanilla_eye_color_saturation_long_night"
+    ],
+    "eye_color_value_long_night": [
+      "vanilla_eye_color_value_long_night"
+    ],
+    "hair_color_hue_long_night": [
+      "vanilla_hair_color_hue_long_night"
+    ],
+    "hair_color_saturation_long_night": [
+      "vanilla_hair_color_saturation_long_night"
+    ],
+    "hair_color_value_long_night": [
+      "vanilla_hair_color_value_long_night"
+    ]
+  }
 }

@@ -1,31 +1,40 @@
 """ck3dna.dna_parser
 
-Parsing between CK3-style DNA text dumps and fixed-length tensors.
+Parsing between CK3's real Ruler Designer DNA export format and fixed
+length tensors.
 
-FORMAT NOTE: Crusader Kings 3's real on-disk/clipboard ``dna="..."`` value
-is a base64-encoded binary blob -- there is no public specification for
-decoding it. This project instead defines its own plain-text "DNA dump"
-convention (documented in README.md) that mirrors the *shape* of CK3 gene
-data: a special-cased `type` (gender) line, a special-cased `age` line, and
-one block per named gene containing one or more weighted sub-gene options
-on CK3's native 0-255 weight scale, e.g.::
+FORMAT: this module reads/writes the *real* CK3 Ruler Designer export
+format, as found in genuine ``.ck3ruler`` save files and raw
+``ruler_designer_<id>={...}`` text exports (see
+`real_dna_samples/` for 85 authentic samples this was reverse-engineered
+from, and `ck3dna.ck3_format` for the low-level block parser). This
+supersedes an earlier, invented plain-text convention used before real
+sample data was available.
 
-    type=male
-    age=30
-    eye_color=
-    {
-        "blue" 200
-    }
+Every gene in the real format is one of:
 
-This keeps the pipeline trainable and inspectable end-to-end, while being
-explicit that it is a project-specific convention rather than a decoder for
-the game's actual binary format.
+* A **color gene** (`hair_color`, `skin_color`, `eye_color`): four raw
+  0-255 integers, e.g. ``hair_color={ 10 3 208 191 }``.
+* A **categorical gene** (everything else, e.g. `gene_chin_forward`): two
+  ``"category" value`` pairs on CK3's native 0-255 weight scale, blending
+  between two (possibly identical) named sub-categories, e.g.::
 
-Tensor layout produced by `dna_ToTensor` / expected by `tensor_ToDna`:
-``[age, gender, <one segment per gene in gene_dicts.json order>]`` -- see
-`ck3dna.gene_dicts.get_lengths` for the exact per-segment sizes. All values
-are kept on CK3's native 0-255 weight scale (age and gender included), to
-match `ck3dna.regressor.Regressor`'s `sigmoid() * 255` output range.
+    gene_chin_forward={ "chin_forward_pos" 133 "chin_forward_pos" 133 }
+    gene_bs_nose_tip_angle={ "nose_tip_angle_pos" 185 "nose_tip_angle_pos" 7 }
+
+Tensor layout produced by `dna_ToTensor` / expected by `tensor_ToDna` (see
+`ck3dna.gene_dicts.get_lengths` for the exact per-segment sizes)::
+
+    [gender, hair_color x4, skin_color x4, eye_color x4,
+     <one segment per categorical gene in gene_dicts.json order>]
+
+For a categorical gene with N observed categories, its segment is a
+length-N vector: each of the gene's two (category, value) pairs sets
+``segment[category_index] = value`` (the second pair overwrites the first
+if they name the same category). All values are kept on CK3's native
+0-255 weight scale, matching `ck3dna.regressor.Regressor`'s
+``sigmoid() * 255`` output range (see that module for the *265 -> *255
+scaling bugfix carried over from the original project).
 """
 from __future__ import annotations
 
@@ -35,50 +44,50 @@ from typing import Dict, List, Optional
 
 import torch
 
+from .ck3_format import COLOR_GENE_NAMES, format_gene_block, parse_dna_file
 from .gene_dicts import DEFAULT_GENE_DICTS_PATH, load_gene_dicts
 
 DEFAULT_DNA_TEMPLATE_PATH = Path(__file__).parent / "dependencies" / "default_dna.txt"
-
-# A gene block looks like `gene_name=\n{\n\t"option" weight\n\t...\n}`.
-# This is intentionally a *flat*, single-level-brace scan (no nested
-# `genes={...}` wrapper) to keep the regex-based parsing below unambiguous.
-_GENE_BLOCK_RE = re.compile(r"(?m)^[ \t]*(\w+)=\s*\n?[ \t]*\{([^{}]*)\}")
-_SUBGENE_RE = re.compile(r'"([^"]+)"\s*([-+]?\d+(?:\.\d+)?)')
-_AGE_RE = re.compile(r"(?m)^[ \t]*age\s*=\s*(\d+(?:\.\d+)?)")
-_TYPE_RE = re.compile(r'(?m)^[ \t]*type\s*=\s*"?(\w+)"?')
 
 # Backwards-compatible alias matching the naming used in the upstream repo.
 load_dict = load_gene_dicts
 
 
 def dna_ToTensor(path, genes: Optional[Dict[str, List[str]]] = None) -> torch.Tensor:
-    """Parse a DNA text dump at `path` into a single concatenated tensor.
+    """Parse a real CK3 DNA export (``.ck3ruler`` or raw
+    ``ruler_designer_<id>=`` ``.txt``) at `path` into a single concatenated
+    tensor. See the module docstring for the exact tensor layout.
 
-    See the module docstring for the exact tensor layout.
+    Genes absent from the file (the real samples are not all perfectly
+    uniform -- some genes were added in later game patches) are left as
+    zeros rather than raising an error.
     """
     if genes is None:
         genes = load_gene_dicts(DEFAULT_GENE_DICTS_PATH)
-    text = Path(path).read_text(encoding="utf-8")
 
-    age_match = _AGE_RE.search(text)
-    age = float(age_match.group(1)) if age_match else 0.0
+    parsed = parse_dna_file(path)
+    gender = 255.0 if (parsed["gender"] or "").lower() == "boy" else 0.0
+    parsed_genes = parsed["genes"]
 
-    type_match = _TYPE_RE.search(text)
-    gender = 255.0 if type_match and type_match.group(1).lower().startswith("m") else 0.0
+    segments = [torch.tensor([gender], dtype=torch.float32)]
 
-    blocks = {name: content for name, content in _GENE_BLOCK_RE.findall(text)}
+    for color_name in COLOR_GENE_NAMES:
+        raw = parsed_genes.get(color_name)
+        vec = torch.zeros(4, dtype=torch.float32)
+        if raw:
+            vec[: len(raw)] = torch.tensor([float(v) for v in raw[:4]])
+        segments.append(vec)
 
-    gene_tensors = []
     for gene_name, options in genes.items():
-        vec = torch.zeros(len(options))
-        block_content = blocks.get(gene_name)
-        if block_content:
-            for sub_name, weight in _SUBGENE_RE.findall(block_content):
-                if sub_name in options:
-                    vec[options.index(sub_name)] = float(weight)
-        gene_tensors.append(vec)
+        vec = torch.zeros(len(options), dtype=torch.float32)
+        pairs = parsed_genes.get(gene_name)
+        if pairs:
+            for category, weight in pairs:
+                if category in options:
+                    vec[options.index(category)] = float(weight)
+        segments.append(vec)
 
-    return torch.cat([torch.tensor([age, gender], dtype=torch.float32)] + gene_tensors)
+    return torch.cat(segments)
 
 
 def tensor_ToDna(
@@ -87,42 +96,69 @@ def tensor_ToDna(
     genes: Optional[Dict[str, List[str]]] = None,
     template_path=DEFAULT_DNA_TEMPLATE_PATH,
 ) -> None:
-    """Inverse of `dna_ToTensor`: write a DNA text file at `path` from `tensor`.
+    """Inverse of `dna_ToTensor`: write a real-format CK3 DNA export at
+    `path` from `tensor`.
 
-    For each gene, the predicted sub-gene is the argmax of its slice, and
-    its weight is the (clamped-to-[0, 255]) value at that index, rounded to
-    the nearest integer.
+    For each categorical gene, the top two weighted categories (by tensor
+    value) become the gene's two ``"category" value`` pairs, matching the
+    real format's blend-shape convention (for a gene with only one
+    possible category, both pairs trivially repeat it). Color genes are
+    written back as their four raw, clamped-to-[0, 255] integers.
     """
     if genes is None:
         genes = load_gene_dicts(DEFAULT_GENE_DICTS_PATH)
 
     tensor = tensor.detach().to("cpu").flatten()
-    age = int(round(max(0.0, min(255.0, float(tensor[0])))))
-    gender = "male" if float(tensor[1]) >= 127.5 else "female"
 
-    offset = 2
-    predictions: Dict[str, tuple] = {}
+    def _clamped_int(value: float) -> int:
+        return int(round(max(0.0, min(255.0, float(value)))))
+
+    offset = 0
+    gender = "boy" if float(tensor[offset]) >= 127.5 else "girl"
+    offset += 1
+
+    output_genes: Dict[str, object] = {}
+    for color_name in COLOR_GENE_NAMES:
+        segment = tensor[offset : offset + 4]
+        offset += 4
+        output_genes[color_name] = [_clamped_int(v) for v in segment.tolist()]
+
     for gene_name, options in genes.items():
         length = len(options)
         segment = tensor[offset : offset + length]
         offset += length
         if length == 0:
             continue
-        idx = int(torch.argmax(segment).item())
-        weight = int(round(max(0.0, min(255.0, float(segment[idx])))))
-        predictions[gene_name] = (options[idx], weight)
+        if length == 1:
+            top_indices = [0, 0]
+        else:
+            top_indices = torch.topk(segment, k=min(2, length)).indices.tolist()
+            if len(top_indices) < 2:
+                top_indices.append(top_indices[0])
+        pairs = []
+        for idx in top_indices:
+            pairs.append((options[idx], _clamped_int(segment[idx])))
+        output_genes[gene_name] = pairs
 
     template = Path(template_path).read_text(encoding="utf-8")
-    template = _TYPE_RE.sub(f"type={gender}", template, count=1)
-    template = _AGE_RE.sub(f"age={age}", template, count=1)
+    template = template.replace("type=boy", f"type={gender}", 1).replace("type=girl", f"type={gender}", 1)
 
-    def _replace_block(match: "re.Match[str]") -> str:
-        gene_name = match.group(1)
-        if gene_name in predictions:
-            sub_name, weight = predictions[gene_name]
-            return f'{gene_name}=\n{{\n\t"{sub_name}" {weight}\n}}'
-        return match.group(0)
+    _line_gene_re = re.compile(r"^(\w+)\s*=\s*\{")
 
-    template = _GENE_BLOCK_RE.sub(_replace_block, template)
+    def _replace_gene_lines(text: str) -> str:
+        lines = text.split("\n")
+        out_lines = []
+        for line in lines:
+            stripped = line.lstrip()
+            indent = line[: len(line) - len(stripped)]
+            match = _line_gene_re.match(stripped)
+            gene_name = match.group(1) if match else None
+            if gene_name in output_genes:
+                out_lines.append(indent + format_gene_block(gene_name, output_genes[gene_name]))
+            else:
+                out_lines.append(line)
+        return "\n".join(out_lines)
+
+    template = _replace_gene_lines(template)
 
     Path(path).write_text(template, encoding="utf-8")

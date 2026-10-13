@@ -61,7 +61,7 @@ class PortraitDnaDataset(Dataset):
         self.samples = []
         for portrait_dir in sorted(p for p in self.root.iterdir() if p.is_dir()):
             image_tensors = sorted(portrait_dir.glob("angle#*.pt"))
-            dna_files = sorted(portrait_dir.glob("dna#*.txt"))
+            dna_files = sorted(portrait_dir.glob("dna#*.txt")) + sorted(portrait_dir.glob("dna#*.ck3ruler"))
             if image_tensors and dna_files:
                 self.samples.append((image_tensors[0], dna_files[0]))
         if not self.samples:

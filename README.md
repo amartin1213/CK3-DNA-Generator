@@ -17,7 +17,7 @@ the pieces that were missing (most importantly, an inference CLI).
 | Area | Upstream | This rebuild |
 |---|---|---|
 | Inference | None -- training only | New first-class `python -m ck3dna.infer` CLI: photo + checkpoint -> DNA `.txt` |
-| `gene_dicts.json` / `default_dna.txt` | Referenced by code, but not present in the repo | Created from scratch (see [Gene format & assumptions](#gene-format-and-assumptions)) |
+| `gene_dicts.json` / `default_dna.txt` | Referenced by code, but not present in the repo | Derived from 85 real CK3 Ruler Designer exports (see [Gene format & assumptions](#gene-format-and-assumptions)) |
 | Image -> tensor preprocessing | Implied by `training.py`'s `torch.load` dataset loader, but no script produced it | New `ck3dna.preprocess_tensors` step |
 | Regressor output scale | `sigmoid(...) * 265` | **Fixed to `* 255`** (CK3 gene weights are 0-255; `265` looks like a typo) -- see `ck3dna/regressor.py` |
 | pytorch-lightning hooks | `training_epoch_end(outputs)` / `validation_epoch_end(outputs)` (removed in PL >=2.0) | Ported to `on_train_epoch_end` / `on_validation_epoch_end` with manually accumulated step outputs |
@@ -54,8 +54,11 @@ portrait photo
 - **`ck3dna/preprocess_tensors.py`** *(new)* -- serializes aligned
   `angle#*.jpg` images to `angle#*.pt` tensors so training doesn't have to
   decode JPEGs every epoch.
+- **`ck3dna/ck3_format.py`** -- low-level, brace-balanced parser for CK3's
+  real Ruler Designer export syntax (`.ck3ruler` / `ruler_designer_<id>=`
+  wrappers, color vs. categorical gene blocks).
 - **`ck3dna/dna_parser.py`** -- `dna_ToTensor` / `tensor_ToDna`: the
-  text-DNA <-> tensor conversion (see below for the format).
+  real-format DNA <-> tensor conversion (see below for the format).
 - **`ck3dna/gene_dicts.py`** -- `get_lengths()` / `total_length()`: derives
   tensor segment sizes from `dependencies/gene_dicts.json`.
 - **`ck3dna/extractor.py`** -- ResNet-50/101/152 feature extractor
@@ -97,18 +100,25 @@ Pass the resulting `shape_predictor_68_face_landmarks.dat` path via the
 ## Dataset format (for training)
 
 One subdirectory per character, each containing one or more portrait
-photos plus exactly one `.txt` DNA dump (see [format](#gene-format-and-assumptions)):
+photos plus exactly one DNA export -- either a raw `.txt`
+`ruler_designer_<id>=` export or a genuine `.ck3ruler` Ruler Designer save
+file (see [format](#gene-format-and-assumptions)):
 
 ```
 portraits/
     aethelred/
         photo1.jpg
         photo2.png
-        aethelred.txt
+        aethelred.ck3ruler
     blanche/
         photo.jpg
         dna.txt
 ```
+
+See `real_dna_samples/` for 85 real example `.ck3ruler` files plus 2
+genuine (photo, DNA) pairs under `real_dna_samples/discord_pairs/`
+(composite front+profile screenshots -- only the front-facing half is
+usable for alignment).
 
 ## Usage: training
 
@@ -156,51 +166,134 @@ DNA text dump to `result.txt`.
 
 ## Gene format and assumptions
 
-Crusader Kings 3's real, in-game `dna="..."` value is a **base64-encoded
-binary blob** -- there is no public specification for decoding it, and
-reverse-engineering the exact binary layout was out of scope for this
-rebuild. The upstream project's parser (`dna_ToTensor`/`tensor_ToDna`)
-clearly expected a human-readable, regex-parseable **plain-text** dump
-instead (tab-indented gene blocks with quoted sub-gene names and numeric
-weights, plus special-cased `age`/`type` lines) -- so this rebuild defines
-and documents its own plain-text "DNA dump" convention matching that
-expectation:
+**This now reflects the real Crusader Kings 3 Ruler Designer export
+format**, reverse-engineered from 85 genuine sample files committed under
+`real_dna_samples/` (83 `.ck3ruler` save files plus 2 real (photo, DNA)
+pairs from Discord screenshots) -- not an invented approximation. An
+earlier version of this project used a made-up plain-text convention
+before any real sample data was available; that has been fully replaced.
+
+### Wrapper shapes
+
+The portrait/gene data appears in one of two equivalent wrapper shapes,
+both parsed transparently by `ck3dna.ck3_format.parse_dna_file`:
 
 ```
-type=male
-age=30
-eye_color=
-{
-	"blue" 200
+# .ck3ruler save files -- nested one level deeper, alongside other
+# character/title data:
+ruler={
+    ...
+    portrait_info={
+        type=boy
+        id=0
+        random_seed=0
+        genes={ ... }
+        override={ ... }
+        entity={ 0 0 }
+    }
 }
-hair_color=
-{
-	"brown" 128
-}
-...
 ```
 
-- One line per gene category (see `ck3dna/dependencies/gene_dicts.json`
-  for the full list: head/face shape, eyes, nose, mouth, chin, cheeks,
-  jaw, ears, skin tone, hair color/type, etc.), each a block of one or
-  more `"option_name" weight` pairs on CK3's native **0-255** weight scale.
-- `type` and `age` are special-cased flat `key=value` lines (gender and
-  age respectively), matching the upstream parser's description.
-- `ck3dna/dependencies/default_dna.txt` is a template with a reasonable
-  default option (usually `"average"`, weight 128) for every gene; `
-  tensor_ToDna` substitutes predicted values into this template.
+```
+# Raw Ruler Designer / Discord clipboard exports -- the portrait block is
+# top-level, keyed by a numeric id:
+ruler_designer_3277766055={
+    type=boy
+    id=0
+    random_seed=0
+    genes={ ... }
+    override={ ... }
+    entity={ 0 0 }
+}
+```
 
-**This is a project-specific convention, not a decoder for CK3's actual
-save/export format.** If you need DNA strings the game itself can read,
-you will still need to translate this intermediate format into the real
-base64 blob (e.g. by scripting the in-game Portrait/Ruler Designer, or by
-reverse-engineering the binary format separately) -- that translation step
-is intentionally out of scope here, since no authoritative public spec for
-it could be found. The gene names and sub-gene option lists are themselves
-reasonable approximations based on commonly documented CK3 gene categories
-(ethnicity/portrait-modding community guides and the general shape of the
-game's `dna_data`/portrait-modifier system), not an extraction from the
-game's files.
+`type=` (`boy`/`girl`) is the only gender-like field in the real DNA
+format; it is encoded as the tensor's leading value (0.0 = girl, 255.0 =
+boy). There is no `age` gene in portrait DNA at all (age lives elsewhere,
+in save-level character data, not in the exported genes).
+
+### Gene shapes
+
+Within `genes={...}`, every entry is one of:
+
+* **Color genes** -- exactly `hair_color`, `skin_color`, `eye_color` --
+  are four **raw** 0-255 integers (not named categories), e.g.:
+
+  ```
+  hair_color={ 10 3 208 191 }
+  ```
+
+* **Categorical genes** (everything else -- ~199 observed genes, e.g.
+  `gene_chin_forward`, `gene_bs_nose_tip_angle`, `gene_eyebrows_shape`,
+  `face_detail_cheek_def`, `expression_brow_wrinkles`, a large
+  `gene_dragon_*` family, etc.) have **two** `"category" value` pairs on
+  CK3's native 0-255 weight scale, blending between two (possibly
+  identical) named sub-categories:
+
+  ```
+  gene_chin_forward={ "chin_forward_pos" 133 "chin_forward_pos" 133 }
+  gene_bs_nose_tip_angle={ "nose_tip_angle_pos" 185 "nose_tip_angle_pos" 7 }
+  ```
+
+  The two pairs are often identical (a single clear-cut category), but can
+  differ (e.g. `"nose_tip_angle_pos" 185` blended with a second,
+  lower-weight sample of the same or a different category) -- this is how
+  CK3 interpolates blend-shapes.
+
+### Tensor layout
+
+`ck3dna/dependencies/gene_dicts.json` was built by parsing all 85 sample
+files (`scripts/build_gene_dicts.py`) and recording, for every gene name,
+every category string observed across them. **This means the category
+lists reflect only what appears in these 85 samples -- they are not
+guaranteed to be exhaustive of every value the game can produce**, though
+with 202 total genes and 442 total categories observed, coverage should be
+fairly broad. Re-run `scripts/build_gene_dicts.py` if more real samples
+become available.
+
+The flattened DNA tensor produced by `dna_ToTensor` / expected by
+`tensor_ToDna` is laid out as:
+
+```
+[gender, hair_color x4, skin_color x4, eye_color x4,
+ <one segment per categorical gene, in gene_dicts.json order>]
+```
+
+For a categorical gene with N observed categories, its segment is a
+length-N vector: each of its two `(category, value)` pairs sets
+`segment[category_index] = value` (both pairs are preserved; a pair
+sharing the same category as the other just overwrites the same slot).
+`tensor_ToDna` inverts this by taking the **top two** weighted categories
+per gene as the predicted `(category, value)` pairs (matching the real
+two-pair blend convention), and writing the three color genes back as
+their four raw, clamped-to-[0, 255] integers. `ck3dna/gene_dicts.py`'s
+`get_lengths()` derives the exact per-segment sizes (sum = 455 with the
+current 85-sample `gene_dicts.json`), which `ck3dna.model.Model`/
+`ck3dna.regressor.Regressor` use to automatically size the network's
+output layer.
+
+### `.ck3ruler` files as training labels
+
+Since real training data primarily comes as `.ck3ruler` save files (see
+`real_dna_samples/rulers/`), `ck3dna.data_processing.clean_dirs`/
+`get_paths` accept `.ck3ruler` as a valid DNA-label suffix alongside
+`.txt`, and `ck3dna.dna_parser.dna_ToTensor`/`ck3dna.ck3_format.parse_dna_file`
+auto-detect which of the two wrapper shapes a file uses -- no separate
+code path is needed for `.ck3ruler` vs. raw `.txt` exports.
+
+### What's still an approximation
+
+* Category coverage is bounded by the 85 real samples available (see
+  above) -- a production run against the full 83-ruler dataset (once
+  paired with portraits) would likely surface a handful of additional
+  categories for some genes.
+* The large `gene_dragon_*` family (~50+ genes, dragon-specific
+  appearance) is included in full for completeness, even though it's
+  irrelevant to ordinary human portraits and defaults to neutral values
+  (127/0) in every sample observed -- it is simply predicted like any
+  other gene. This likely wastes a little model capacity on a
+  mostly-constant target, but keeps the gene set complete and matches
+  the real, full set of gene names CK3 exports.
 
 ## Testing
 
@@ -209,10 +302,11 @@ pip install -e ".[dev]"
 pytest
 ```
 
-`tests/test_dna_parser.py` and `tests/test_gene_dicts.py` verify that the
-gene-dict format is internally consistent (round-trips through
-`dna_ToTensor`/`tensor_ToDna`, correct tensor sizing) even without real CK3
-game data available to test against.
+`tests/test_ck3_format.py`, `tests/test_dna_parser.py` and
+`tests/test_gene_dicts.py` verify that the real-format parser and
+gene-dict are internally consistent and round-trip correctly, including
+round-trip tests against genuine `.ck3ruler` sample files under
+`real_dna_samples/`.
 
 ## Docker
 
