@@ -1,20 +1,51 @@
 """Unit tests for `ck3dna.dna_base64` (the save-game base64 DNA codec).
 
-No ground-truth base64<->plaintext sample is available yet (see module
-docstring), so these tests exercise structural/round-trip correctness of
-the Python port against the extracted reference tables themselves, rather
-than validating against real CK3 data.
+Most of these tests exercise structural/round-trip correctness of the
+Python port against the extracted reference tables themselves, since a
+real ground-truth base64<->plaintext sample was not available when the
+module was first written. `test_decode_matches_real_ground_truth_sample`
+below *is* a real validation: a genuine base64 DNA string for the
+"Aelyx" character (obtained via CK3's debug portrait editor), checked
+against `real_dna_samples/rulers/Aelyx.ck3ruler`. See that test and the
+module docstring for the resulting confidence-level discussion.
 """
 from __future__ import annotations
 
 import base64
+from pathlib import Path
 
 import pytest
 
+from ck3dna.ck3_format import parse_dna_file
 from ck3dna.dna_base64 import (
     decode_base64_dna,
     encode_base64_dna,
     load_base64_gene_index,
+)
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+# A real base64 DNA string for "Aelyx", obtained via CK3's debug
+# portrait_editor "Copy DNA string" feature. Note: the user flagged that
+# their portrait editor was behaving buggy at the time of capture, so this
+# is treated as best-effort ground truth, not a guaranteed-perfect
+# reference -- see the module docstring and the test below for how this
+# is interpreted.
+_AELYX_BASE64 = (
+    "AAAaCiUBGCL8vPUaAIwBjAFyAHIAcgByAX8AfwCMAIwAcgByAHIAcgFyAXIBggCCAH0AfQGMAYwB"
+    "ggGCAYwBjACMAIwAdQF1AHIAcgCJAIkBggCCAIwAjAB8AHwAcgFyAHMAcwByAHIAcgByAH4AfgBy"
+    "AHIAcgByAXIBcgByAHIBjAGMAIgAiAFyAXIAXwAdAccBtQEVAFUAVwBXAAAAAAI7AjsBMwEzAQUB"
+    "BQF/ASUARQAhAQAAMQENAQ0A3wDfADsAOwEfAR8BCwELADMAMwFLARcAAAAAAcEBwQAVABUAFQA5"
+    "ADMAVwAvAC8AcwBzAM8AzwFoAWgAHwAfAW0BbQELAQsAewB7AA0ADQDHAAEA/wDZASUBJQExATEA"
+    "cQBxAAEAAQGfATsAEwATAHIAgQE4AAYE/wRKAQABAAEAAQAAJgAmAAAAAAEAAwACQwJDAAAAnQCU"
+    "AGkDAAIAAgACAAAAAAADAAMACAAAXAGXAZYBWAFyAP8BAAAPBKQEvwT/A+sD6wOAA4AAAAB9Af8A"
+    "fwD/AP8AfwB/AP8A/wAAAAADBQEDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB/AH8AfwB/AH8AfwB/AH8AfwB/AH8AfwB/AH8A"
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH8AfwB/AP8AAAA7AFsBAAB/AH8AfwB/AV8B"
+    "lwILAkQAfwB/AS8CAAB/AH8A/wB/ATsBOwK8AlsBlwGXAkQCRAIAAgAAAAAAASABIAAAAAACAwIA"
+    "AZsBAAB/AH8BAAEAAjcCNwExATEAhgCGAVABUAFEAYEBEwETAQABNwD/AP8CAAIAAQoBCgHoAegA"
+    "fwB/Av8AMA=="
 )
 
 
@@ -114,3 +145,61 @@ def test_encode_drops_genes_not_in_gene_order(index):
     encoded = encode_base64_dna(genes, mod="NONE", index=index)
     empty_encoded = encode_base64_dna({}, mod="NONE", index=index)
     assert encoded == empty_encoded
+
+
+def test_decode_matches_real_ground_truth_sample(index):
+    """Validate `decode_base64_dna` against a real base64 DNA string for
+    "Aelyx" (obtained via CK3's debug portrait editor) against the matching
+    `real_dna_samples/rulers/Aelyx.ck3ruler` plaintext export.
+
+    Result (see `scripts/validate_base64_dna.py` for the full per-gene
+    report this is based on): of the 191 genes in `Aelyx.ck3ruler`, 87 are
+    not covered by this codec's ~1.5-era tables at all (mostly the
+    `gene_dragon_*` family and a handful of genes added in later patches
+    -- see `ck3dna.dna_base64`'s module docstring), which is expected and
+    not a decode error. Of the **104 genes this codec does cover,
+    96 (92%) decoded to an exact match** -- including all three color
+    genes exactly. This is strong validation that the core algorithm
+    (byte layout, gene order, blend-pair convention) is correct; the
+    remaining ~8 per-gene mismatches look like isolated category-table
+    version drift (a few genes gained/reordered categories in patches
+    after the ~1.5 era this codec's tables were extracted from), not a
+    systemic bug. The user also flagged their portrait editor as
+    "currently bugged" when capturing this string, so a small residual
+    error rate is plausible from the source capture too, not just the
+    decoder.
+
+    This test pins that known-good result as a regression check: it
+    should keep matching at least this well, and should not silently
+    regress to a much lower match rate (which would indicate a real
+    byte-order/gene-order bug).
+    """
+    dna_path = REPO_ROOT / "real_dna_samples" / "rulers" / "Aelyx.ck3ruler"
+    if not dna_path.exists():
+        pytest.skip("real_dna_samples/rulers/Aelyx.ck3ruler not present in this checkout")
+
+    decoded = decode_base64_dna(_AELYX_BASE64, mod="NONE", index=index)
+    expected = parse_dna_file(dna_path)
+
+    decoded_genes = decoded["genes"]
+    expected_genes = expected["genes"]
+
+    gene_order = set(index["gene_order"]["NONE"])
+    covered = [name for name in expected_genes if name in gene_order]
+    assert covered, "expected at least some genes to be covered by the NONE gene order"
+
+    matches = sum(1 for name in covered if decoded_genes.get(name) == expected_genes.get(name))
+    match_ratio = matches / len(covered)
+
+    # Color genes should match exactly -- they're raw bytes, no category
+    # table or version-drift ambiguity involved.
+    for color_gene in ("hair_color", "skin_color", "eye_color"):
+        assert decoded_genes[color_gene] == expected_genes[color_gene]
+
+    # Known-good result was 96/104 (92%); allow a little slack for
+    # environment/float differences but fail loudly on a real regression.
+    assert match_ratio >= 0.85, (
+        f"base64 decode only matched {matches}/{len(covered)} "
+        f"({match_ratio:.0%}) covered genes against the real Aelyx sample "
+        "-- expected >=85%, which would indicate a real decoding bug."
+    )

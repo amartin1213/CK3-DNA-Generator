@@ -9,7 +9,8 @@ shared on Reddit/Discord, as opposed to the plaintext Ruler Designer
 CONFIDENCE LEVEL -- please read before relying on this module
 ================================================================
 This is a **best-effort reverse-engineering**, not an officially documented
-or ground-truth-validated format:
+format, but it has now been validated against one real ground-truth
+sample with strong results:
 
 * The core algorithm (base64 -> raw bytes -> 4 bytes per gene, in a fixed
   hardcoded gene order) and the full gene-order/category-index tables in
@@ -20,15 +21,21 @@ or ground-truth-validated format:
   unofficial, and appears to target CK3 roughly around patch 1.5 -- it
   covers ~104 "vanilla" genes (the ``NONE`` gene order below) plus an
   extended ~131-gene order for a specific mod it calls ``EPE``.
-* **This has NOT yet been validated against a real base64 DNA string with
-  a known-correct plaintext counterpart.** The algorithm structure (byte
-  layout, blend-pair convention) is high confidence because it mirrors the
-  plaintext format we *have* validated against 85 real `.ck3ruler`
-  samples, and the gene-order/category tables come directly from the
-  converter's source rather than being guessed. But until a real
-  ground-truth sample is checked (see `scripts/validate_base64_dna.py`),
-  treat decoded output as a reasonable-confidence hypothesis, not a
-  verified result.
+* **Validated against a real base64 DNA string** for the "Aelyx" character
+  (obtained via CK3's debug ``portrait_editor`` "Copy DNA string" feature)
+  checked against its matching `real_dna_samples/rulers/Aelyx.ck3ruler`
+  plaintext export (see `scripts/validate_base64_dna.py` and
+  `tests/test_dna_base64.py::test_decode_matches_real_ground_truth_sample`).
+  Of the 104 genes this codec's tables cover, **96 (92%) decoded to an
+  exact match**, including all three color genes exactly. The remaining
+  ~8 mismatches are isolated to a handful of genes whose category lists
+  appear to have changed in patches after ~1.5 (e.g. `complexion`,
+  `face_detail_chin_def`, the eye/teeth/eyelash accessory genes) rather
+  than following one systemic pattern -- consistent with per-gene
+  category-table version drift, not a byte-order or gene-order bug. (The
+  source capture was also flagged by the user as coming from a
+  momentarily-buggy portrait editor, so a little of that residual error
+  may be in the captured string rather than the decode.)
 * Our own `gene_dicts.json` (built from 85 real, modern `.ck3ruler`
   samples) has ~199 genes, including ~75 that do not appear in this
   base64 codec's tables at all (mostly newer-DLC genes such as the

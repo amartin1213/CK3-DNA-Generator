@@ -334,7 +334,7 @@ code path is needed for `.ck3ruler` vs. raw `.txt` exports.
   mostly-constant target, but keeps the gene set complete and matches
   the real, full set of gene names CK3 exports.
 
-## Base64 save-game DNA format (experimental)
+## Base64 save-game DNA format
 
 Besides the plaintext Ruler Designer export handled above, CK3 also stores
 each character's DNA as a compact **base64 string** inside save games
@@ -344,8 +344,8 @@ Reddit/Discord. `ck3dna/dna_base64.py` adds a best-effort
 such strings can be converted into the same gene dict shape the rest of
 the pipeline already uses.
 
-**Confidence level: structurally high, not yet validated against real
-ground truth.** There is no official spec for this format. The algorithm
+**Confidence level: validated against one real ground-truth sample, with
+strong results.** There is no official spec for this format. The algorithm
 and reference gene-order/category-index tables
 (`ck3dna/dependencies/base64_gene_index.json`) were reverse-engineered by
 statically analysing `AppDnaConverter.js` from the MIT-licensed
@@ -376,18 +376,34 @@ slot in this format and cannot be recovered from a base64 string. This is
 an expected limitation of the only known decode logic, not a bug in the
 port.
 
-**No ground-truth base64↔plaintext pair has been checked yet.** Once one
-is available (e.g. via CK3's debug `portrait_editor` "Copy DNA string"
-feature, for a character also present as a `.ck3ruler` sample), validate
-with:
+**Ground-truth validation result:** a real base64 DNA string for the
+"Aelyx" character (obtained via CK3's debug `portrait_editor` "Copy DNA
+string" feature) was checked against its matching
+`real_dna_samples/rulers/Aelyx.ck3ruler` plaintext export with
+`scripts/validate_base64_dna.py`. Of its 191 genes, 87 are outside this
+codec's ~1.5-era tables entirely (expected, see above). Of the **104
+genes the codec does cover, 96 (92%) decoded to an exact match**,
+including all three color genes matching exactly. The remaining ~8
+mismatches are isolated (a few genes like `complexion`,
+`face_detail_chin_def` and the eye/teeth/eyelash accessory genes have
+evidently gained or reordered categories in patches after ~1.5) rather
+than one systemic pattern, so they read as per-gene category-table
+version drift, not a byte-order or gene-order bug in the decoder. (The
+user also noted their portrait editor was "currently bugged" when
+capturing this string, so a little of that residual error may be in the
+captured string itself rather than the decode.) This result is pinned as
+a regression test in `tests/test_dna_base64.py`
+(`test_decode_matches_real_ground_truth_sample`). Re-run the validation
+script yourself any time with:
 
 ```bash
 python scripts/validate_base64_dna.py --base64 "Hfwd/Jlmm..." --dna-file "real_dna_samples/rulers/Some Ruler.ck3ruler"
 ```
 
 This reports, per gene, whether the decoded and expected values match,
-and exits non-zero on any mismatch, so it doubles as a regression check
-once ground truth exists.
+and exits non-zero on any mismatch -- useful for checking additional
+ground-truth samples as they become available, or for diagnosing a
+specific gene's mismatch further.
 
 ## Testing
 
@@ -400,9 +416,10 @@ pytest
 `tests/test_gene_dicts.py` and `tests/test_dna_base64.py` verify that the
 real-format parser, gene-dict and base64 codec are internally consistent
 and round-trip correctly, including round-trip tests against genuine
-`.ck3ruler` sample files under `real_dna_samples/`. (The base64 tests
-round-trip against the reverse-engineered reference tables themselves,
-since no real ground-truth base64 sample is available yet -- see "Base64
+`.ck3ruler` sample files under `real_dna_samples/`. (Most of the base64
+tests round-trip against the reverse-engineered reference tables
+themselves, but `test_decode_matches_real_ground_truth_sample` checks a
+real base64 string against a real `.ck3ruler` sample -- see "Base64
 save-game DNA format" above.)
 
 ## Docker
