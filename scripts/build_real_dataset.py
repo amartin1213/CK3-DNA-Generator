@@ -95,6 +95,18 @@ def find_ruler_pairs(portraits_dir: Path = PORTRAITS_DIR, rulers_dir: Path = RUL
     return pairs
 
 
+# Reference photos flagged by the person sourcing them as a weak/
+# low-confidence likeness match (e.g. a joke/satirical image with no
+# genuine resemblance to the DNA it's attached to), rather than a genuine
+# "this is who I based the look on" reference. Training on these would
+# teach the model an incorrect photo<->gene association, so they're
+# excluded here even though their sibling `pairN_portrait.*` render is
+# still included normally. pair32: a satirical "funny pope" stock photo
+# with exaggerated regalia, attached to DNA with no matching headgear
+# gene -- explicitly flagged as weak by the person who supplied it.
+_EXCLUDED_REFERENCE_PHOTOS = {"pair32_reference_photo"}
+
+
 def find_discord_pairs(discord_dir: Path = DISCORD_PAIRS_DIR):
     """Returns ``[(portrait_path, dna_txt_path), ...]`` for every
     ``pairN_portrait.{png,jpg}`` / ``pairN_dna.txt`` pair, AND every
@@ -103,7 +115,10 @@ def find_discord_pairs(discord_dir: Path = DISCORD_PAIRS_DIR):
     ``pairN``), under `discord_dir`.
 
     A ``pairN`` with both a rendered portrait and a reference photo
-    contributes two samples (same DNA label, two photos of the same face).
+    contributes two samples (same DNA label, two photos of the same face)
+    -- unless the reference photo's stem is in `_EXCLUDED_REFERENCE_PHOTOS`
+    (a known weak/joke pairing), in which case only the rendered portrait
+    is used for that pair.
 
     Safe to re-run as more ``pairN_*`` files are added incrementally.
     """
@@ -118,6 +133,8 @@ def find_discord_pairs(discord_dir: Path = DISCORD_PAIRS_DIR):
     for suffix in ("_portrait", "_reference_photo"):
         for ext in ("png", "jpg"):
             for photo in sorted(discord_dir.glob(f"*{suffix}.{ext}")):
+                if photo.stem in _EXCLUDED_REFERENCE_PHOTOS:
+                    continue
                 stem = photo.stem[: -len(suffix)]
                 dna_path = dna_by_stem.get(stem)
                 if dna_path is not None:

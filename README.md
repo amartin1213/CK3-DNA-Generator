@@ -211,13 +211,32 @@ confidence score** (not the largest bounding box) -- a true frontal face
 reliably scores well above a profile/3-4-profile one, regardless of which
 side of the image it's on or how much empty UI space surrounds it. This
 also handles full Ruler-Designer UI screenshots (large side panels, faces
-off-center) without any special-casing.
+off-center) without any special-casing. Some pairs' `pairN_portrait.*`
+composites show a CK3 render side by side with its *real-life* reference
+photo (both genuinely frontal, e.g. an actor/model the likeness was built
+from) rather than a front+profile turnaround; either half the detector
+picks is a valid photo of the same face/DNA pairing, so this needs no
+special handling either.
 
-**Non-vanilla gene namespaces (mods):** a couple of the community pairs
-use modded gene namespaces -- one Game of Thrones ("AGOT") mod export
-(with ~23 genes, mostly cosmetic/accessory ones like `cosmetics_*`,
-`cloaks`, `gene_agot_special_bust_*`, not in `gene_dicts.json`) and one
-MENA DLC export (fully covered by the existing vanilla gene set already).
+**Known weak/joke reference photo pairings are excluded:** one bonus
+reference photo (`pair32_reference_photo.png`, a satirical "pope" stock
+photo attached to DNA with no matching headgear gene) was flagged by the
+person who supplied it as not a genuine likeness match. It's excluded
+from the assembled dataset (see `_EXCLUDED_REFERENCE_PHOTOS` in
+`scripts/build_real_dataset.py`) so the model isn't trained on an
+incorrect photo<->gene association; that pair's regular rendered
+`pairN_portrait.png` is still included normally.
+
+**Non-vanilla gene namespaces (mods):** several community pairs use
+modded gene namespaces -- Game of Thrones ("AGOT", e.g. `gene_dragon_*`,
+`agot_all_hairstyles`), MENA DLC (`sp4_mena_hairstyles`), Byzantine DLC
+(`ep3_byzantine_hairstyle`), and combinations of multiple DLC/mod
+namespaces in one export (clothes, headgear, beard, and prop genes from
+FP1/EP1/EP3/MENA/`pol`). Namespace-specific cosmetic/accessory genes not
+present in `gene_dicts.json` (e.g. the ~23 AGOT-only ones found so far)
+are simply absent from the schema; core face-shape genes are shared
+across vanilla and all these DLCs/mods, so coverage of the genes that
+actually matter for photo->DNA prediction is unaffected.
 `dna_ToTensor`/`tensor_ToDna` silently ignore genes absent from
 `gene_dicts.json` by design, so mixing these into the unified dataset is
 safe -- it just means the ~23 AGOT-only cosmetic genes are not learned
