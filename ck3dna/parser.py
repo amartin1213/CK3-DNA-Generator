@@ -25,7 +25,21 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="EarlyStopping patience, in validation epochs without improvement",
     )
     parser.add_argument("--batch_size", type=int, default=16)
-    parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument(
+        "--lr",
+        type=float,
+        default=3e-3,
+        help=(
+            "Learning rate for the RMSprop optimizer. Empirically, 1e-3 "
+            "(the original default) converges too slowly within a "
+            "practical epoch budget on small real-world datasets (tens to "
+            "~100 samples) and the model collapses to near-constant, "
+            "low-diversity predictions across different input photos; "
+            "3e-3 converged meaningfully further within the same epoch "
+            "budget in that regime -- see README's 'Training notes: output "
+            "diversity' section."
+        ),
+    )
     parser.add_argument(
         "--val_ratio", type=float, default=0.2, help="Fraction of the dataset reserved for validation"
     )

@@ -244,6 +244,58 @@ from that one sample. Given how small and shared the core face-shape gene
 set already is, these are kept in the single combined dataset rather than
 segmented out, at the cost of that narrow coverage gap.
 
+### Training notes: output diversity / avoiding prediction collapse
+
+On real datasets in the tens-to-~100-sample range, it's easy to end up
+with a model that predicts visually *similar*-looking DNA for very
+different input photos -- not literal collapse (different photos do
+produce measurably different raw tensors), but much less diversity than
+the training data actually contains. This was investigated directly with
+`scripts/analyze_gene_variance.py`, which compares the per-gene standard
+deviation of ground-truth DNA tensors across the dataset against the
+per-gene standard deviation of the model's own predictions on that same
+dataset -- a low predicted-std/ground-truth-std ratio for a gene means the
+model is regressing that gene towards a near-constant value regardless of
+input.
+
+Two findings from that investigation (at the time, run against a 77- and
+then a 104-sample version of the real dataset):
+
+1. **The collapse was not specific to shape genes vs. color genes** -- the
+   initial hypothesis was that `gene_chin_*`/`gene_nose_*`-style
+   categorical genes were getting drowned out in the loss by the 3 color
+   genes (`hair_color`/`skin_color`/`eye_color`, 4 raw dims each).
+   Measured ratios showed both groups similarly collapsed with plain
+   element-wise MSE (shape ratio 0.162, color ratio 0.129 on the
+   77-sample set) -- color genes were, if anything, *more* collapsed in
+   relative terms, because plain `nn.MSELoss` implicitly weights each gene
+   by its segment length, and the ~440 combined dims of small-value,
+   mostly-zero categorical segments dominate the gradient over the color
+   genes' 12 raw, higher-magnitude dims.
+2. **Per-gene loss normalization and a higher learning rate both measurably
+   helped**, and the learning rate mattered more. `ck3dna.training.Net`
+   now defaults to `PerGeneMSELoss` (in `ck3dna/training.py`): it averages
+   squared error *within* each gene segment first, then averages those
+   per-gene means across genes, so every gene gets equal weight regardless
+   of how many categories it has (pass `per_gene_loss=False` to restore
+   plain `nn.MSELoss`). On the 77-sample set this alone took the predicted
+   /ground-truth std ratio from 0.156 -> 0.436 at the same epoch budget.
+   Separately, on the larger 104-sample set the original `lr=1e-3` default
+   plateaued early (`ReduceLROnPlateau` dropping the learning rate before
+   the model had meaningfully fit the data) at ratio 0.199, while `lr=3e-3`
+   reached 0.319 in the same 40 epochs -- `--lr`'s default was changed
+   to `3e-3` accordingly (see `ck3dna/parser.py`).
+
+Neither change is a complete fix: with a dataset this size (vs. the tens
+of thousands of labeled photos a from-scratch ResNet regression task would
+ideally want), some residual regression-to-the-mean is expected, and
+predicted diversity ratios may need re-checking (and retraining with
+tuned `--lr`/more epochs) as the dataset grows. Re-run
+`scripts/analyze_gene_variance.py --checkpoint <ckpt> --datastore
+real_dataset_aligned` after any retrain to check whether a given change
+actually increased prediction diversity rather than just changing the
+loss number.
+
 ## Usage: inference (new)
 
 ```bash

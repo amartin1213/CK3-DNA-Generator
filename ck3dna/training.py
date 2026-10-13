@@ -42,7 +42,39 @@ from pytorch_lightning.loggers import TensorBoardLogger
 from torch.utils.data import DataLoader, Dataset, random_split
 
 from .dna_parser import dna_ToTensor
+from .gene_dicts import get_lengths
 from .model import Model
+
+
+class PerGeneMSELoss(torch.nn.Module):
+    """MSE loss that first averages squared error *within* each gene
+    segment, then averages those per-gene means across genes (rather than
+    averaging over every raw tensor element, which is what plain
+    ``nn.MSELoss`` does).
+
+    Why: the flattened DNA tensor mixes very different segment sizes --
+    4-dim color genes, 1-2-dim categorical genes, and 10+-dim categorical
+    genes all concatenated together (see `ck3dna.gene_dicts.get_lengths`).
+    Plain element-wise MSE implicitly weights each *gene* by its segment
+    length, so a handful of high-cardinality genes can dominate the
+    gradient purely by dimension count, while low-cardinality genes get
+    diluted. Averaging per-gene first gives every gene equal weight
+    regardless of how many categories it has.
+    """
+
+    def __init__(self, lengths):
+        super().__init__()
+        self.lengths = list(lengths)
+
+    def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        offset = 0
+        per_gene_losses = []
+        for length in self.lengths:
+            pred_seg = pred[:, offset : offset + length]
+            target_seg = target[:, offset : offset + length]
+            offset += length
+            per_gene_losses.append(torch.nn.functional.mse_loss(pred_seg, target_seg))
+        return torch.stack(per_gene_losses).mean()
 
 
 def _portrait_loader(path) -> torch.Tensor:
@@ -113,15 +145,27 @@ class PortraitDnaDataModule(pl.LightningDataModule):
 
 
 class Net(pl.LightningModule):
-    """MSE-trained wrapper around `ck3dna.model.Model`, with an RMSprop
-    optimizer and a `ReduceLROnPlateau` scheduler monitoring validation loss.
+    """`PerGeneMSELoss`-trained (per-gene-normalized MSE by default) wrapper
+    around `ck3dna.model.Model`, with an RMSprop optimizer and a
+    `ReduceLROnPlateau` scheduler monitoring validation loss.
     """
 
-    def __init__(self, lr: float = 1e-3, feature_size: int = 512, resnet_depth: int = 50, pretrained: bool = True):
+    def __init__(
+        self,
+        lr: float = 3e-3,
+        feature_size: int = 512,
+        resnet_depth: int = 50,
+        pretrained: bool = True,
+        per_gene_loss: bool = True,
+    ):
         super().__init__()
         self.save_hyperparameters()
         self.model = Model(feature_size=feature_size, resnet_depth=resnet_depth, pretrained=pretrained)
-        self.loss_fn = torch.nn.MSELoss()
+        # See `PerGeneMSELoss` docstring: normalizes per-gene instead of
+        # per-raw-element so high-cardinality genes don't drown out
+        # low-cardinality ones in the gradient. `per_gene_loss=False`
+        # restores the original flat `nn.MSELoss` behavior for comparison.
+        self.loss_fn = PerGeneMSELoss(get_lengths()) if per_gene_loss else torch.nn.MSELoss()
         self.training_step_outputs = []
         self.validation_step_outputs = []
 
