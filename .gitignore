@@ -13,6 +13,7 @@ portraits/
 aligned/
 processed/
 real_dataset_aligned/
+checkpoints/
 *.pt
 *.ckpt
 lightning_logs/
