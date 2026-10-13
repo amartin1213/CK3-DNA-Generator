@@ -95,7 +95,18 @@ class PortraitDnaDataModule(pl.LightningDataModule):
         self.train_set, self.val_set = random_split(full, [train_size, val_size])
 
     def train_dataloader(self):
-        return DataLoader(self.train_set, batch_size=self.batch_size, num_workers=self.workers, shuffle=True)
+        # drop_last=True avoids a trailing batch of size 1, which would crash
+        # the regressor's BatchNorm1d layers (they require >1 sample per
+        # channel in training mode) -- this matters in practice on small
+        # real-world datasets where len(train_set) isn't a multiple of
+        # batch_size (e.g. 17 samples / batch_size=4 -> a final batch of 1).
+        return DataLoader(
+            self.train_set,
+            batch_size=self.batch_size,
+            num_workers=self.workers,
+            shuffle=True,
+            drop_last=len(self.train_set) > self.batch_size,
+        )
 
     def val_dataloader(self):
         return DataLoader(self.val_set, batch_size=self.batch_size, num_workers=self.workers)

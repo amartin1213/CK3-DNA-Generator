@@ -151,6 +151,45 @@ python -m ck3dna.training --datastore_name ./processed --epochs 50 --batch_size 
 Checkpoints land under Lightning's default `lightning_logs/` /
 `tb_logs/` directories; pass one back in with `--ckpt` to resume.
 
+> **Small/real datasets and batch size.** `PortraitDnaDataModule`'s train
+> `DataLoader` uses `drop_last=True` (when the training split has more
+> than one batch worth of samples) to avoid a trailing batch of size 1,
+> which crashes the regressor's `BatchNorm1d` layers (`"Expected more than
+> 1 value per channel when training"`) -- this matters in practice once
+> you're training on real, small datasets where `len(train_set)` isn't a
+> clean multiple of `--batch_size`.
+
+### Building a dataset from the real `.ck3ruler` + portrait samples
+
+`real_dna_samples/ruler_portraits/<RulerName>.png` holds real portrait
+screenshots, name-matched to their DNA under
+`real_dna_samples/rulers/<RulerName>.ck3ruler` (e.g. `Aegon I.png` <->
+`Aegon I.ck3ruler`). More screenshots are added incrementally over time
+(same naming convention), so `scripts/build_real_dataset.py` is written to
+be safely re-run as new batches arrive -- it matches purely by filename
+stem and rebuilds its output directory from scratch each time:
+
+```bash
+# 1. Pair + align every <name>.png that has a matching <name>.ck3ruler,
+#    writing the portraits#i/angle#0.jpg + dna#i.txt layout directly
+#    (single alignment pass, no process.py / torchvision_dataset_align
+#    step needed since these screenshots are raw/unaligned).
+python scripts/build_real_dataset.py \
+    --predictor shape_predictor_68_face_landmarks.dat \
+    --output real_dataset_aligned
+
+# 2. Serialize to tensors
+python -m ck3dna.preprocess_tensors real_dataset_aligned
+
+# 3. Train (small-dataset-friendly settings)
+python -m ck3dna.training --datastore_name real_dataset_aligned \
+    --epochs 30 --val_epochs 10 --batch_size 4 --val_ratio 0.2
+```
+
+`real_dataset_aligned/` is a regenerable derived artifact (git-ignored,
+not committed) -- re-run the three steps above any time more portrait
+screenshots land under `real_dna_samples/ruler_portraits/`.
+
 ## Usage: inference (new)
 
 ```bash

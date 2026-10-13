@@ -12,6 +12,7 @@ venv/
 portraits/
 aligned/
 processed/
+real_dataset_aligned/
 *.pt
 *.ckpt
 lightning_logs/
