@@ -2,6 +2,13 @@
 every portrait image found under a directory of per-character subfolders,
 in place, using dlib.
 
+This is a *standalone, alternative* alignment tool: it overwrites images in
+place and does not restructure the dataset into the `portraits#i/dna#i.txt`
+layout `ck3dna.data_processing.dataset_align` produces. Use this **or**
+`dataset_align`, not both -- chaining them double-aligns the images, and
+re-running face detection on an already-aligned, tightly cropped face is
+unreliable. See README.md's "Usage: training" section.
+
 Usage::
 
     python process.py --directory ./portraits --predictor shape_predictor_68_face_landmarks.dat

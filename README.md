@@ -113,19 +113,30 @@ portraits/
 ## Usage: training
 
 ```bash
-# 1. Clean + align raw portraits in place
-python process.py --directory ./portraits --predictor shape_predictor_68_face_landmarks.dat
-
-# 2. Copy cleaned/aligned data into the portraits#i/angle#ii.jpg + dna#i.txt layout
+# 1. Clean + align raw (unaligned) portraits, copying them into the
+#    portraits#i/angle#ii.jpg + dna#i.txt layout
 python -c "from ck3dna.data_processing import dataset_align; \
     dataset_align('./portraits', './processed').process_and_save()"
 
-# 3. Serialize aligned images to .pt tensors
+# 2. Serialize aligned images to .pt tensors
 python -m ck3dna.preprocess_tensors ./processed
 
-# 4. Train
+# 3. Train
 python -m ck3dna.training --datastore_name ./processed --epochs 50 --batch_size 16
 ```
+
+> **Align your raw photos exactly once.** `dataset_align` (step 1) already
+> runs dlib's face alignment, so always point it at the *original,
+> unaligned* `./portraits` directory. Do not also run `process.py` /
+> `torchvision_dataset_align` on the same photos first (or on `./processed`
+> afterwards) -- re-running face detection on an already-aligned, tightly
+> cropped face is unreliable (dlib's HOG detector frequently fails to find
+> a face in a crop that's mostly just the face itself) and produces no
+> benefit, since the images are already aligned. `process.py` is an
+> alternative, standalone in-place aligner (useful if you only want to
+> align a folder of photos without the `portraits#i/dna#i.txt`
+> restructuring `dataset_align` does) -- use one or the other, never both
+> on the same images.
 
 Checkpoints land under Lightning's default `lightning_logs/` /
 `tb_logs/` directories; pass one back in with `--ckpt` to resume.

@@ -13,6 +13,7 @@ dependencies = [
     "torch>=2.0",
     "torchvision>=0.15",
     "pytorch-lightning>=2.0",
+    "tensorboard>=2.13",
     "dlib>=19.24",
     "opencv-python>=4.8",
     "numpy>=1.24",
