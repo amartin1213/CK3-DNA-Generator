@@ -161,19 +161,29 @@ Checkpoints land under Lightning's default `lightning_logs/` /
 
 ### Building a dataset from the real `.ck3ruler` + portrait samples
 
-`real_dna_samples/ruler_portraits/<RulerName>.png` holds real portrait
-screenshots, name-matched to their DNA under
-`real_dna_samples/rulers/<RulerName>.ck3ruler` (e.g. `Aegon I.png` <->
-`Aegon I.ck3ruler`). More screenshots are added incrementally over time
-(same naming convention), so `scripts/build_real_dataset.py` is written to
-be safely re-run as new batches arrive -- it matches purely by filename
-stem and rebuilds its output directory from scratch each time:
+Two kinds of real (portrait, DNA) sources are combined into one dataset by
+`scripts/build_real_dataset.py`:
+
+* `real_dna_samples/ruler_portraits/<RulerName>.png`, name-matched to
+  `real_dna_samples/rulers/<RulerName>.ck3ruler` (e.g. `Aegon I.png` <->
+  `Aegon I.ck3ruler`) -- official in-game screenshots.
+* `real_dna_samples/discord_pairs/pairN_portrait.{png,jpg}` +
+  `pairN_dna.txt` -- community-shared (Reddit/Discord) pairs. A few of
+  these (`pairN_reference_photo.{png,jpg}`) additionally include a genuine
+  real-life photo the poster says the in-game likeness was based on; each
+  one is ingested as its own extra training sample against the same DNA
+  label.
+
+More of either are added incrementally over time (same naming
+conventions), so the script is written to be safely re-run as new batches
+arrive -- it matches purely by filename stem and rebuilds its output
+directory from scratch each time:
 
 ```bash
-# 1. Pair + align every <name>.png that has a matching <name>.ck3ruler,
-#    writing the portraits#i/angle#0.jpg + dna#i.txt layout directly
-#    (single alignment pass, no process.py / torchvision_dataset_align
-#    step needed since these screenshots are raw/unaligned).
+# 1. Pair + align every known source, writing the portraits#i/angle#0.jpg
+#    + dna#i.txt layout directly (single alignment pass, no process.py /
+#    torchvision_dataset_align step needed since these screenshots are
+#    raw/unaligned).
 python scripts/build_real_dataset.py \
     --predictor shape_predictor_68_face_landmarks.dat \
     --output real_dataset_aligned
@@ -188,7 +198,32 @@ python -m ck3dna.training --datastore_name real_dataset_aligned \
 
 `real_dataset_aligned/` is a regenerable derived artifact (git-ignored,
 not committed) -- re-run the three steps above any time more portrait
-screenshots land under `real_dna_samples/ruler_portraits/`.
+screenshots land under `real_dna_samples/ruler_portraits/` or
+`real_dna_samples/discord_pairs/`.
+
+**Composite front+profile portraits:** many community-shared portraits
+show two renders side by side (front-facing + profile), and which side the
+front-facing one is on is *not* consistent across samples (confirmed: at
+least one has it on the right, not the left). Rather than guess a crop
+heuristic, `ck3dna.alignment.align_face` runs dlib's detector across the
+*whole, uncropped* image and picks the detection with the **highest
+confidence score** (not the largest bounding box) -- a true frontal face
+reliably scores well above a profile/3-4-profile one, regardless of which
+side of the image it's on or how much empty UI space surrounds it. This
+also handles full Ruler-Designer UI screenshots (large side panels, faces
+off-center) without any special-casing.
+
+**Non-vanilla gene namespaces (mods):** a couple of the community pairs
+use modded gene namespaces -- one Game of Thrones ("AGOT") mod export
+(with ~23 genes, mostly cosmetic/accessory ones like `cosmetics_*`,
+`cloaks`, `gene_agot_special_bust_*`, not in `gene_dicts.json`) and one
+MENA DLC export (fully covered by the existing vanilla gene set already).
+`dna_ToTensor`/`tensor_ToDna` silently ignore genes absent from
+`gene_dicts.json` by design, so mixing these into the unified dataset is
+safe -- it just means the ~23 AGOT-only cosmetic genes are not learned
+from that one sample. Given how small and shared the core face-shape gene
+set already is, these are kept in the single combined dataset rather than
+segmented out, at the cost of that narrow coverage gap.
 
 ## Usage: inference (new)
 

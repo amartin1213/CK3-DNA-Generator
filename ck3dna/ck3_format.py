@@ -11,7 +11,11 @@ structure:
 * `.ck3ruler` save files -- the portrait data is nested one level deeper,
   under ``ruler={ ... portrait_info={ ... } }``.
 * Raw Ruler Designer / Discord exports -- the portrait data is the
-  top-level block, keyed as ``ruler_designer_<id>={ ... }``.
+  top-level block, usually keyed as ``ruler_designer_<id>={ ... }``, but
+  some real-world exports use a non-numeric placeholder key instead (e.g.
+  ``TODO_choose_portait_key={ ... }``, observed in a community-shared
+  sample). Any top-level ``<identifier>={ ... }`` block containing a nested
+  ``genes={...}`` block is accepted as a fallback for this case.
 
 Within the portrait block, every gene is one of two shapes:
 
@@ -39,6 +43,15 @@ COLOR_GENE_NAMES = ("hair_color", "skin_color", "eye_color")
 
 _PORTRAIT_INFO_KEY_RE = re.compile(r"portrait_info\s*=\s*\{")
 _RULER_DESIGNER_KEY_RE = re.compile(r"ruler_designer_\d+\s*=\s*\{")
+# Fallback for raw exports whose top-level key isn't the usual
+# ``ruler_designer_<id>=`` -- observed in the wild as
+# ``TODO_choose_portait_key=`` (a placeholder left by whatever tool produced
+# the export, seemingly when it wasn't tied to a saved Ruler Designer slot).
+# Any ``<identifier>={`` block is accepted here; `find_portrait_block` only
+# falls back to it after the two known-good keys fail to match, and the
+# caller still requires a nested ``genes={...}`` block to parse
+# successfully, so this stays narrow in practice.
+_GENERIC_TOP_LEVEL_KEY_RE = re.compile(r"(?m)^\s*\w+\s*=\s*\{")
 _GENES_KEY_RE = re.compile(r"(?<![\w])genes\s*=\s*\{")
 _TYPE_RE = re.compile(r"(?m)^\s*type\s*=\s*(\w+)")
 _ID_RE = re.compile(r"(?m)^\s*id\s*=\s*(\d+)")
@@ -87,6 +100,14 @@ def find_portrait_block(text: str) -> Tuple[str, str]:
         return "portrait_info", found[0]
     found = find_block(text, _RULER_DESIGNER_KEY_RE)
     if found is not None:
+        return "ruler_designer", found[0]
+    # Last resort: some raw exports use a non-numeric placeholder top-level
+    # key instead of ruler_designer_<id>= (e.g. "TODO_choose_portait_key=").
+    # Structurally identical otherwise, so treat it the same as the
+    # ruler_designer wrapper -- but only accept it if it actually contains a
+    # nested genes={...} block, to avoid matching an unrelated top-level key.
+    found = find_block(text, _GENERIC_TOP_LEVEL_KEY_RE)
+    if found is not None and _GENES_KEY_RE.search(found[0]):
         return "ruler_designer", found[0]
     raise ValueError("No portrait_info={...} or ruler_designer_<id>={...} block found")
 

@@ -1,8 +1,10 @@
 """ck3dna.alignment
 
-Standard dlib 68-landmark face alignment: detect the largest face in an
-image, estimate a similarity transform from its eye landmarks, and warp the
-image to a fixed-size square crop with eyes placed at a canonical position.
+Standard dlib 68-landmark face alignment: detect the most frontal face in an
+image (highest dlib detector confidence score, not simply the largest
+bounding box -- see `align_face`'s docstring), estimate a similarity
+transform from its eye landmarks, and warp the image to a fixed-size square
+crop with eyes placed at a canonical position.
 
 This is a from-scratch re-implementation of the common "align_face" recipe
 used throughout face-processing pipelines (the upstream repo's
@@ -52,7 +54,7 @@ def align_face(
     output_size: int = 256,
     left_eye_pos=(0.35, 0.35),
 ) -> Optional[np.ndarray]:
-    """Detect, align and crop the largest face found in `filepath`.
+    """Detect, align and crop the most frontal face found in `filepath`.
 
     Args:
         filepath: path to the source image.
@@ -76,11 +78,24 @@ def align_face(
     detector = _get_detector()
     predictor = _get_predictor(predictor_path)
 
-    detections = detector(gray, 1)
-    if len(detections) == 0:
+    # `run` (vs. plain `detector(gray, 1)`) also returns each detection's
+    # confidence score, with `adjust_threshold=-1` lowering the acceptance
+    # bar so weaker candidates (e.g. a 3/4-profile face in a composite
+    # front+profile portrait) are still returned as candidates rather than
+    # silently dropped.
+    #
+    # We pick the HIGHEST-SCORING detection rather than the largest by area.
+    # This matters for CK3 "front + profile" composite portraits (common in
+    # community-shared DNA samples): the two faces are often near-identical
+    # in bounding-box area, and which side the front-facing one appears on
+    # is not consistent (observed on both the left and the right across
+    # different samples), so area is not a reliable signal, but dlib's
+    # frontal-face detector reliably scores a true frontal face well above
+    # a profile/3-4-profile one regardless of its position in the image.
+    rects, scores, _ = detector.run(gray, 1, -1)
+    if len(rects) == 0:
         return None
-    # Use the largest detected face (by bounding-box area).
-    rect = max(detections, key=lambda r: r.width() * r.height())
+    rect = max(zip(rects, scores), key=lambda rect_score: rect_score[1])[0]
 
     landmarks = _shape_to_np(predictor(gray, rect))
     left_eye_center = landmarks[_LEFT_EYE].mean(axis=0)
