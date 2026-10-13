@@ -334,6 +334,61 @@ code path is needed for `.ck3ruler` vs. raw `.txt` exports.
   mostly-constant target, but keeps the gene set complete and matches
   the real, full set of gene names CK3 exports.
 
+## Base64 save-game DNA format (experimental)
+
+Besides the plaintext Ruler Designer export handled above, CK3 also stores
+each character's DNA as a compact **base64 string** inside save games
+(`dna="Hfwd/Jlmm..."`) and this is the format most commonly pasted on
+Reddit/Discord. `ck3dna/dna_base64.py` adds a best-effort
+`decode_base64_dna()` / `encode_base64_dna()` pair for this format, so
+such strings can be converted into the same gene dict shape the rest of
+the pipeline already uses.
+
+**Confidence level: structurally high, not yet validated against real
+ground truth.** There is no official spec for this format. The algorithm
+and reference gene-order/category-index tables
+(`ck3dna/dependencies/base64_gene_index.json`) were reverse-engineered by
+statically analysing `AppDnaConverter.js` from the MIT-licensed
+[Kyusoo/CK3_Utility](https://github.com/Kyusoo/CK3_Utility) web app (not
+by us running or modifying that tool -- just reading its logic), which
+appears to target CK3 around patch ~1.5:
+
+* A base64 string decodes to a flat byte array: **4 bytes per gene**, in a
+  **fixed, hardcoded gene order** (not the same order as the plaintext
+  format, and not alphabetical) -- see `gene_order["NONE"]` in
+  `base64_gene_index.json` for the ~104-gene vanilla order (`"EPE"` is a
+  longer, ~131-gene order for a specific mod, included for completeness).
+* The three color genes (`hair_color`, `skin_color`, `eye_color`) are 4
+  raw integers, exactly like the plaintext format.
+* Every other gene's 4 bytes are
+  `[category_index_1, value_1, category_index_2, value_2]` -- the same
+  two-pair blend convention as plaintext, except the category is a raw
+  integer index (per-gene category list) rather than a quoted string.
+  `base64_gene_index.json["category_index"]` maps each gene's category
+  names to these indices, taken directly from the converter's source.
+
+Because our own `gene_dicts.json` was built from 85 real, modern
+`.ck3ruler` samples (a newer game version with more DLC content), it has
+~199 genes versus this codec's ~104-131 -- around 75 genes (mostly the
+`gene_dragon_*` family, plus some renamed/added complexion and
+beard/hairstyle categories from patches after ~1.5) simply have no byte
+slot in this format and cannot be recovered from a base64 string. This is
+an expected limitation of the only known decode logic, not a bug in the
+port.
+
+**No ground-truth base64↔plaintext pair has been checked yet.** Once one
+is available (e.g. via CK3's debug `portrait_editor` "Copy DNA string"
+feature, for a character also present as a `.ck3ruler` sample), validate
+with:
+
+```bash
+python scripts/validate_base64_dna.py --base64 "Hfwd/Jlmm..." --dna-file "real_dna_samples/rulers/Some Ruler.ck3ruler"
+```
+
+This reports, per gene, whether the decoded and expected values match,
+and exits non-zero on any mismatch, so it doubles as a regression check
+once ground truth exists.
+
 ## Testing
 
 ```bash
@@ -341,11 +396,14 @@ pip install -e ".[dev]"
 pytest
 ```
 
-`tests/test_ck3_format.py`, `tests/test_dna_parser.py` and
-`tests/test_gene_dicts.py` verify that the real-format parser and
-gene-dict are internally consistent and round-trip correctly, including
-round-trip tests against genuine `.ck3ruler` sample files under
-`real_dna_samples/`.
+`tests/test_ck3_format.py`, `tests/test_dna_parser.py`,
+`tests/test_gene_dicts.py` and `tests/test_dna_base64.py` verify that the
+real-format parser, gene-dict and base64 codec are internally consistent
+and round-trip correctly, including round-trip tests against genuine
+`.ck3ruler` sample files under `real_dna_samples/`. (The base64 tests
+round-trip against the reverse-engineered reference tables themselves,
+since no real ground-truth base64 sample is available yet -- see "Base64
+save-game DNA format" above.)
 
 ## Docker
 
@@ -363,3 +421,12 @@ dictionaries, inference CLI, tensor preprocessing step) were designed and
 implemented independently here, and the `*265` regressor scaling bug and
 outdated pytorch-lightning hooks were fixed. Many thanks to the original
 author for the underlying idea.
+
+The base64 save-game DNA codec (`ck3dna/dna_base64.py`,
+`ck3dna/dependencies/base64_gene_index.json`) is derived from reading the
+logic of the MIT-licensed
+[Kyusoo/CK3_Utility](https://github.com/Kyusoo/CK3_Utility) web app's
+`AppDnaConverter.js`. Its gene-order and category-index tables were
+extracted from that source (not copied verbatim as code -- re-implemented
+in Python from the traced logic); see that repo's `LICENSE` for the
+original terms. Thanks to Kyusoo for publishing that tool's source.
