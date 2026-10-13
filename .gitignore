@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# Data / artifacts (not meant to be committed)
+portraits/
+aligned/
+processed/
+*.pt
+*.ckpt
+lightning_logs/
+tb_logs/
+
+# dlib model (must be downloaded separately, see README)
+*.dat
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

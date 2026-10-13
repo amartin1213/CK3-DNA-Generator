@@ -1,0 +1,102 @@
+type=male
+age=30
+head_width=
+{
+	"average" 128
+}
+head_profile=
+{
+	"average" 128
+}
+face_shape=
+{
+	"oval" 128
+}
+forehead_height=
+{
+	"average" 128
+}
+forehead_width=
+{
+	"average" 128
+}
+brow_height=
+{
+	"average" 128
+}
+eye_shape=
+{
+	"almond" 128
+}
+eye_distance=
+{
+	"average" 128
+}
+eye_angle=
+{
+	"neutral" 128
+}
+eye_color=
+{
+	"brown" 128
+}
+nose_size=
+{
+	"average" 128
+}
+nose_shape=
+{
+	"straight" 128
+}
+nose_width=
+{
+	"average" 128
+}
+mouth_size=
+{
+	"average" 128
+}
+lip_thickness=
+{
+	"average" 128
+}
+mouth_corner=
+{
+	"neutral" 128
+}
+chin_shape=
+{
+	"round" 128
+}
+chin_size=
+{
+	"average" 128
+}
+cheekbones=
+{
+	"average" 128
+}
+cheek_fullness=
+{
+	"average" 128
+}
+jaw_shape=
+{
+	"average" 128
+}
+ear_size=
+{
+	"average" 128
+}
+skin_tone=
+{
+	"olive" 128
+}
+hair_color=
+{
+	"brown" 128
+}
+hair_type=
+{
+	"straight" 128
+}

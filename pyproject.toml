@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ck3dna"
+version = "0.1.0"
+description = "Predict a Crusader Kings 3 character's DNA (face genes) from a portrait photo, end-to-end trainable."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+dependencies = [
+    "torch>=2.0",
+    "torchvision>=0.15",
+    "pytorch-lightning>=2.0",
+    "dlib>=19.24",
+    "opencv-python>=4.8",
+    "numpy>=1.24",
+    "Pillow>=9.5",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[tool.setuptools.packages.find]
+include = ["ck3dna*"]
+
+[tool.setuptools.package-data]
+ck3dna = ["dependencies/*.json", "dependencies/*.txt"]
