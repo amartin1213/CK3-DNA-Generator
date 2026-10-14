@@ -278,6 +278,8 @@ class Net(pl.LightningModule):
         diversity_prior_path: Optional[str] = None,
         gender_weight: float = 300.0,
         facial_structure_weight: float = 1.0,
+        chin_weight: float = 1.0,
+        eye_weight: float = 1.0,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -291,13 +293,28 @@ class Net(pl.LightningModule):
         # stayed collapsed (near-constant blended predictions, reported as
         # "puffy lips"/"no jawline"/"chin too high") even under equal
         # per-gene weighting, worse than other genes of similar size.
+        # `chin_weight` stacks an *additional* multiplier on top of that for
+        # "chin"-named genes specifically: even after a 3x facial_structure_
+        # weight boost, gene_chin_height stayed one of the single most
+        # collapsed genes in the whole model (ratio ~0.245) while jaw_height
+        # with the same 3x reached ~0.431 -- so chin height needed an extra
+        # push beyond the shared mouth/jaw/chin multiplier.
+        # `eye_weight` is a separate group for "eye"-named genes, added after
+        # a user report that eye angle/shape looked off; this group wasn't
+        # covered by facial_structure_weight at all previously.
         if per_gene_loss:
-            group_weights = (
-                {"mouth": facial_structure_weight, "jaw": facial_structure_weight, "chin": facial_structure_weight}
-                if facial_structure_weight != 1.0
-                else None
+            group_weights: Dict[str, float] = {}
+            if facial_structure_weight != 1.0:
+                group_weights["mouth"] = facial_structure_weight
+                group_weights["jaw"] = facial_structure_weight
+                group_weights["chin"] = facial_structure_weight
+            if chin_weight != 1.0:
+                group_weights["chin"] = group_weights.get("chin", 1.0) * chin_weight
+            if eye_weight != 1.0:
+                group_weights["eye"] = eye_weight
+            self.loss_fn = PerGeneMSELoss(
+                get_lengths(), names=get_gene_names(), group_weights=group_weights or None
             )
-            self.loss_fn = PerGeneMSELoss(get_lengths(), names=get_gene_names(), group_weights=group_weights)
         else:
             self.loss_fn = torch.nn.MSELoss()
         # Dedicated gender classification loss (see `GenderBCELoss`), on by
@@ -406,6 +423,8 @@ class experiment:
             diversity_prior_path=getattr(args, "diversity_prior", None),
             gender_weight=getattr(args, "gender_weight", 300.0),
             facial_structure_weight=getattr(args, "facial_structure_weight", 1.0),
+            chin_weight=getattr(args, "chin_weight", 1.0),
+            eye_weight=getattr(args, "eye_weight", 1.0),
         )
         callbacks = [EarlyStopping(monitor="val_loss", patience=args.val_epochs)]
         logger = TensorBoardLogger(save_dir="tb_logs", name="ck3dna")

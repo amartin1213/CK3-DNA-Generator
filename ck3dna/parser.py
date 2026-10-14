@@ -110,6 +110,33 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "--diversity_weight as needed."
         ),
     )
+    parser.add_argument(
+        "--chin_weight",
+        type=float,
+        default=1.0,
+        help=(
+            "Extra multiplier (stacked on top of --facial_structure_weight) "
+            "applied only to genes whose name contains 'chin' (1.0 = "
+            "disabled). Added after gene_chin_height stayed one of the "
+            "single most collapsed genes in the whole model (ratio ~0.245) "
+            "even with a 3x --facial_structure_weight boost, while "
+            "gene_jaw_height improved much more (~0.431) under the same "
+            "multiplier -- chin height specifically needed more push. Try "
+            "2.0-3.0 on top of --facial_structure_weight 3.0."
+        ),
+    )
+    parser.add_argument(
+        "--eye_weight",
+        type=float,
+        default=1.0,
+        help=(
+            "Multiplier applied to genes whose name contains 'eye' (1.0 = "
+            "disabled, same equal per-gene weighting as every other gene). "
+            "Added after a user report that eye angle/shape looked off; "
+            "this gene group was not covered by --facial_structure_weight. "
+            "Try 2.0-3.0."
+        ),
+    )
     return parser
 
 

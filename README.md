@@ -405,8 +405,26 @@ an outsized share via `--gender_weight`. Retraining with
 to ~0.23-0.43 (roughly doubled-to-tripled), while *also* improving overall
 diversity (ratio 0.309 -> 0.323) and full-dataset gender accuracy (60.6% ->
 65.4%) -- unlike the earlier gender-weight tradeoff, this one had no
-downside on the metrics checked. New default checkpoint:
-`checkpoints/ck3dna_real104_facial_epoch39.ckpt`.
+downside on the metrics checked.
+
+**Further chin/eye weighting (`--chin_weight`, `--eye_weight`)**: even with
+`--facial_structure_weight 3.0`, `gene_chin_height` stayed one of the single
+most collapsed genes in the whole model (ratio 0.245) while `gene_jaw_height`
+-- under the exact same 3x multiplier -- reached 0.431, and eye angle/shape
+genes (never covered by `--facial_structure_weight`, which only matches
+`mouth`/`jaw`/`chin`) sat at 0.33-0.41, consistent with user reports of a
+too-high chin and oddly-angled eyes. `PerGeneMSELoss`'s `group_weights` now
+supports layering a second multiplier for chin-named genes specifically
+(`--chin_weight`, stacks multiplicatively on top of
+`--facial_structure_weight`) and a new independent group for eye-named genes
+(`--eye_weight`). Retraining with `--facial_structure_weight 3.0
+--chin_weight 2.0 --eye_weight 2.0` (chin genes end up at a combined 6x,
+eye genes at 2x) raised `gene_chin_height` to 0.320 and `gene_eye_angle` to
+0.453, while overall diversity (0.323 -> 0.322) and full-dataset gender
+accuracy (65.4% -> 69.2%) held steady/improved -- again no measured
+downside. `gene_jaw_height` eased back to 0.290 (still healthy, above the
+~0.25 "collapsed" threshold) likely just from run-to-run training variance.
+New default checkpoint: `checkpoints/ck3dna_real104_chineye_epoch39.ckpt`.
 
 **Other observed collapse**, e.g. `gene_age` consistently predicting
 `old_beauty_1`/`old_1` regardless of input, was checked and is *not* a
