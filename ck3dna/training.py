@@ -32,8 +32,9 @@ pytorch-lightning without needing to pin an old version.
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 import pytorch_lightning as pl
 import torch
@@ -42,8 +43,14 @@ from pytorch_lightning.loggers import TensorBoardLogger
 from torch.utils.data import DataLoader, Dataset, random_split
 
 from .dna_parser import dna_ToTensor
-from .gene_dicts import get_lengths
+from .gene_dicts import get_lengths, load_gene_dicts
 from .model import Model
+
+# Built by `scripts/build_dna_prior.py` from a corpus of genuine CK3 Ruler
+# Designer `.ck3ruler` character files (see that script's docstring). Only
+# aggregate per-gene standard deviations are stored here, never the source
+# character files themselves.
+DEFAULT_DIVERSITY_PRIOR_PATH = Path(__file__).parent / "dependencies" / "dna_prior_std.json"
 
 
 class PerGeneMSELoss(torch.nn.Module):
@@ -75,6 +82,58 @@ class PerGeneMSELoss(torch.nn.Module):
             offset += length
             per_gene_losses.append(torch.nn.functional.mse_loss(pred_seg, target_seg))
         return torch.stack(per_gene_losses).mean()
+
+
+def load_diversity_prior_stds(path=DEFAULT_DIVERSITY_PRIOR_PATH, lengths: Optional[List[int]] = None) -> List[float]:
+    """Load the per-gene-segment target standard deviations produced by
+    `scripts/build_dna_prior.py`, in the same gene order as `get_lengths()`
+    (which `DiversityPriorLoss` expects)."""
+    if lengths is None:
+        lengths = get_lengths()
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    gene_dicts = load_gene_dicts()
+    names = ["gender", "hair_color", "skin_color", "eye_color"] + list(gene_dicts.keys())
+    per_gene_std = data["per_gene_std"]
+    stds = [per_gene_std[name] for name in names]
+    assert len(stds) == len(lengths), "diversity prior gene count doesn't match gene_dicts"
+    return stds
+
+
+class DiversityPriorLoss(torch.nn.Module):
+    """Regularizer that penalizes a training batch's predictions for having
+    *less* per-gene spread (standard deviation across the batch) than real
+    CK3 characters typically exhibit, pushing the model away from
+    mode-collapsed/near-identical output ("every face looks the same") and
+    toward the natural diversity found in a reference corpus of genuine DNA
+    samples (see `scripts/build_dna_prior.py` and
+    `dependencies/dna_prior_std.json`).
+
+    Deliberately one-sided (via `relu`): predictions *more* diverse than the
+    reference aren't penalized, only collapsed ones. This is a secondary
+    regularizer, not a substitute for the primary per-gene MSE loss -- on
+    its own it can be driven to zero by any sufficiently-spread-out batch,
+    irrespective of per-gene accuracy against ground truth.
+    """
+
+    def __init__(self, lengths: List[int], target_stds: List[float]):
+        super().__init__()
+        self.lengths = list(lengths)
+        self.register_buffer("target_stds", torch.tensor(target_stds, dtype=torch.float32))
+
+    def forward(self, pred: torch.Tensor) -> torch.Tensor:
+        if pred.size(0) < 2:
+            # Batch-wise std is undefined for a single sample; skip rather
+            # than propagate a spurious zero/NaN penalty.
+            return pred.new_zeros(())
+        offset = 0
+        penalties = []
+        for length, target_std in zip(self.lengths, self.target_stds.tolist()):
+            seg = pred[:, offset : offset + length]
+            offset += length
+            seg_std = seg.std(dim=0).mean()
+            penalties.append(torch.relu(target_std - seg_std) ** 2)
+        return torch.stack(penalties).mean()
 
 
 def _portrait_loader(path) -> torch.Tensor:
@@ -157,6 +216,8 @@ class Net(pl.LightningModule):
         resnet_depth: int = 50,
         pretrained: bool = True,
         per_gene_loss: bool = True,
+        diversity_weight: float = 0.0,
+        diversity_prior_path: Optional[str] = None,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -166,16 +227,37 @@ class Net(pl.LightningModule):
         # low-cardinality ones in the gradient. `per_gene_loss=False`
         # restores the original flat `nn.MSELoss` behavior for comparison.
         self.loss_fn = PerGeneMSELoss(get_lengths()) if per_gene_loss else torch.nn.MSELoss()
+        # Optional secondary regularizer (see `DiversityPriorLoss`):
+        # disabled by default (diversity_weight=0.0) to keep prior behavior
+        # unchanged unless explicitly opted into via the CLI.
+        self.diversity_loss: Optional[DiversityPriorLoss]
+        if diversity_weight > 0:
+            lengths = get_lengths()
+            target_stds = load_diversity_prior_stds(
+                diversity_prior_path or DEFAULT_DIVERSITY_PRIOR_PATH, lengths
+            )
+            self.diversity_loss = DiversityPriorLoss(lengths, target_stds)
+        else:
+            self.diversity_loss = None
         self.training_step_outputs = []
         self.validation_step_outputs = []
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.model(x)
 
+    def _diversity_penalty(self, preds: torch.Tensor, stage: str) -> torch.Tensor:
+        if self.diversity_loss is None:
+            return preds.new_zeros(())
+        penalty = self.diversity_loss(preds)
+        self.log(f"{stage}_diversity_penalty", penalty, prog_bar=False, on_step=False, on_epoch=True)
+        return penalty
+
     def training_step(self, batch, batch_idx):
         images, targets = batch
         preds = self(images)
-        loss = self.loss_fn(preds, targets)
+        loss = self.loss_fn(preds, targets) + self.hparams.diversity_weight * self._diversity_penalty(
+            preds, "train"
+        )
         self.training_step_outputs.append(loss.detach())
         self.log("train_loss", loss, prog_bar=True, on_step=False, on_epoch=True)
         return loss
@@ -183,7 +265,9 @@ class Net(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         images, targets = batch
         preds = self(images)
-        loss = self.loss_fn(preds, targets)
+        loss = self.loss_fn(preds, targets) + self.hparams.diversity_weight * self._diversity_penalty(
+            preds, "val"
+        )
         self.validation_step_outputs.append(loss.detach())
         self.log("val_loss", loss, prog_bar=True, on_step=False, on_epoch=True)
         return loss
@@ -221,7 +305,11 @@ class experiment:
             workers=args.workers,
             val_ratio=args.val_ratio,
         )
-        self.net = Net(lr=args.lr)
+        self.net = Net(
+            lr=args.lr,
+            diversity_weight=getattr(args, "diversity_weight", 0.0),
+            diversity_prior_path=getattr(args, "diversity_prior", None),
+        )
         callbacks = [EarlyStopping(monitor="val_loss", patience=args.val_epochs)]
         logger = TensorBoardLogger(save_dir="tb_logs", name="ck3dna")
         self.trainer = pl.Trainer(

@@ -296,6 +296,45 @@ real_dataset_aligned` after any retrain to check whether a given change
 actually increased prediction diversity rather than just changing the
 loss number.
 
+#### Optional: a real-DNA diversity prior (`--diversity_weight`)
+
+Because labeled photo/DNA pairs are scarce, a third, independent lever is
+available: regularizing predictions against the *statistical spread* of
+genuine CK3 characters, without needing any new photos at all.
+
+`scripts/build_dna_prior.py` takes a folder of real CK3 character files
+that already contain a `genes={ ... }` DNA block -- e.g. Ruler Designer
+`.ck3ruler` exports from `Documents/Paradox Interactive/Crusader Kings
+III/rulers/` -- parses each one with the existing `dna_ToTensor` (which
+already supports this file format), and computes the per-gene standard
+deviation across that corpus. It writes out **only the aggregate per-gene
+std values**, as `ck3dna/dependencies/dna_prior_std.json` by default --
+never the source character files or any names/likenesses -- so the
+resulting artifact is safe to commit even though the original `.ck3ruler`
+files (if they're named after real/fictional people) are not.
+
+```bash
+python scripts/build_dna_prior.py --rulers_dir "C:\Users\<you>\Documents\Paradox Interactive\Crusader Kings III\rulers" --out ck3dna/dependencies/dna_prior_std.json
+```
+
+At training time, `ck3dna.training.DiversityPriorLoss` uses this file as
+a target: for each gene segment, it penalizes a training batch whenever
+the model's own predictions are *less* spread out (lower std across the
+batch) than real characters typically are, via a one-sided
+`relu(target_std - batch_std)**2` term -- predictions that are already
+at least as diverse as the reference are never penalized. This is purely
+a secondary regularizer added on top of `PerGeneMSELoss`, disabled by
+default (`--diversity_weight 0.0`); enable it with e.g.:
+
+```bash
+python -m ck3dna.training --diversity_weight 0.1 --diversity_prior ck3dna/dependencies/dna_prior_std.json ...
+```
+
+A reasonable starting range is `0.05`-`0.2`; watch the logged
+`train_diversity_penalty`/`val_diversity_penalty` metrics alongside the
+main loss, and re-run `analyze_gene_variance.py` after training to check
+whether it actually improved prediction diversity for your dataset size.
+
 ## Usage: inference (new)
 
 ```bash

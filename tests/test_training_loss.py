@@ -1,7 +1,8 @@
-"""Tests for ck3dna.training's PerGeneMSELoss (per-gene-normalized loss)."""
+"""Tests for ck3dna.training's PerGeneMSELoss (per-gene-normalized loss)
+and DiversityPriorLoss (diversity-collapse regularizer)."""
 import torch
 
-from ck3dna.training import PerGeneMSELoss
+from ck3dna.training import DiversityPriorLoss, PerGeneMSELoss
 
 
 def test_per_gene_mse_zero_for_identical_tensors():
@@ -46,3 +47,35 @@ def test_per_gene_mse_matches_elementwise_when_segments_equal_length():
     per_gene = loss_fn(pred, target).item()
     plain = torch.nn.functional.mse_loss(pred, target).item()
     assert abs(per_gene - plain) < 1e-5
+
+
+def test_diversity_prior_loss_zero_when_batch_already_diverse():
+    lengths = [1, 4]
+    loss_fn = DiversityPriorLoss(lengths, target_stds=[1.0, 2.0])
+    # Hand-crafted batch where every segment already has std well above target.
+    pred = torch.tensor(
+        [
+            [0.0, 0.0, 0.0, 0.0, 0.0],
+            [100.0, 50.0, 50.0, 50.0, 50.0],
+            [-100.0, -50.0, -50.0, -50.0, -50.0],
+        ]
+    )
+    assert loss_fn(pred).item() == 0.0
+
+
+def test_diversity_prior_loss_positive_when_batch_collapsed():
+    lengths = [1]
+    loss_fn = DiversityPriorLoss(lengths, target_stds=[10.0])
+    # Every row identical -> batch std is 0, fully collapsed.
+    pred = torch.zeros(4, 1)
+    penalty = loss_fn(pred).item()
+    assert penalty == 100.0  # relu(10 - 0)**2
+
+
+def test_diversity_prior_loss_handles_batch_size_one():
+    lengths = [1, 4]
+    loss_fn = DiversityPriorLoss(lengths, target_stds=[1.0, 2.0])
+    pred = torch.rand(1, 5)
+    # Std across a single sample is undefined; should degrade gracefully to 0
+    # rather than NaN/crash.
+    assert loss_fn(pred).item() == 0.0

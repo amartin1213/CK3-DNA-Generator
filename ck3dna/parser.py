@@ -47,6 +47,31 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--gpus", type=int, default=0, help="Number of GPUs to use (0 = CPU / let Lightning auto-detect)"
     )
     parser.add_argument("--ckpt", type=str, default=None, help="Optional checkpoint path to resume training from")
+    parser.add_argument(
+        "--diversity_weight",
+        type=float,
+        default=0.0,
+        help=(
+            "Weight for the DiversityPriorLoss regularizer (0 = disabled, "
+            "matching prior behavior). Penalizes a training batch's "
+            "predictions for having less per-gene spread than real CK3 "
+            "characters typically do, using an independent reference "
+            "corpus (see scripts/build_dna_prior.py) far larger than the "
+            "small photo-paired training set -- a secondary defense "
+            "against the model collapsing to near-identical output. "
+            "Try a small value such as 0.05-0.2."
+        ),
+    )
+    parser.add_argument(
+        "--diversity_prior",
+        type=str,
+        default=None,
+        help=(
+            "Path to a diversity prior JSON built by "
+            "scripts/build_dna_prior.py. Defaults to the checked-in "
+            "ck3dna/dependencies/dna_prior_std.json."
+        ),
+    )
     return parser
 
 
