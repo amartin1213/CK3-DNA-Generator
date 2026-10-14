@@ -66,7 +66,14 @@ def dna_ToTensor(path, genes: Optional[Dict[str, List[str]]] = None) -> torch.Te
         genes = load_gene_dicts(DEFAULT_GENE_DICTS_PATH)
 
     parsed = parse_dna_file(path)
-    gender = 255.0 if (parsed["gender"] or "").lower() == "boy" else 0.0
+    # Real CK3 exports always use "boy"/"girl" for `type=`, but several of the
+    # hand-curated Discord-sourced training pairs instead wrote "male"/
+    # "female". Treat both spellings as synonyms -- previously only "boy" was
+    # recognized, so every "male"-labeled sample (true males) silently fell
+    # through to gender=0.0 ("girl"), corrupting ~1/4 of the training labels
+    # and teaching the model to regress male photos toward a female output.
+    gender_str = (parsed["gender"] or "").strip().lower()
+    gender = 255.0 if gender_str in ("boy", "male") else 0.0
     parsed_genes = parsed["genes"]
 
     segments = [torch.tensor([gender], dtype=torch.float32)]

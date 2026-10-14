@@ -72,6 +72,21 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "ck3dna/dependencies/dna_prior_std.json."
         ),
     )
+    parser.add_argument(
+        "--gender_weight",
+        type=float,
+        default=2000.0,
+        help=(
+            "Weight for the dedicated GenderBCELoss term on the DNA tensor's "
+            "binary gender channel (0 = disabled, falling back to treating "
+            "gender as a plain per-gene MSE regression target like every "
+            "other gene). Default is high (2000.0) because BCE values are "
+            "several orders of magnitude smaller than the averaged per-gene "
+            "MSE loss, so a small weight would leave it negligible. This "
+            "fixes a real misgendering failure mode seen with plain MSE on "
+            "this fundamentally binary ('boy'/'girl', never a blend) trait."
+        ),
+    )
     return parser
 
 

@@ -84,6 +84,31 @@ class PerGeneMSELoss(torch.nn.Module):
         return torch.stack(per_gene_losses).mean()
 
 
+class GenderBCELoss(torch.nn.Module):
+    """Binary-cross-entropy loss on the DNA tensor's leading gender channel
+    (encoded 0.0="girl"/255.0="boy", see module docstring), instead of
+    folding it into the generic per-gene MSE.
+
+    Why: gender is fundamentally a binary classification target (CK3's
+    `type=` field is always exactly "boy" or "girl", never a blend), but
+    plain squared error lets the model hedge near the 0-255 midpoint for
+    visually ambiguous photos -- that minimizes *expected* squared error,
+    but produces exactly the "misgendered" predictions seen in practice.
+    BCE's gradient grows steeply as a confident-but-wrong prediction
+    approaches the opposite extreme, pushing the model to commit to one
+    side rather than average toward the training set's gender ratio.
+    """
+
+    def __init__(self, eps: float = 1e-6):
+        super().__init__()
+        self.eps = eps
+
+    def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        pred_prob = (pred[:, 0] / 255.0).clamp(self.eps, 1.0 - self.eps)
+        target_prob = (target[:, 0] / 255.0).clamp(0.0, 1.0)
+        return torch.nn.functional.binary_cross_entropy(pred_prob, target_prob)
+
+
 def load_diversity_prior_stds(path=DEFAULT_DIVERSITY_PRIOR_PATH, lengths: Optional[List[int]] = None) -> List[float]:
     """Load the per-gene-segment target standard deviations produced by
     `scripts/build_dna_prior.py`, in the same gene order as `get_lengths()`
@@ -218,6 +243,7 @@ class Net(pl.LightningModule):
         per_gene_loss: bool = True,
         diversity_weight: float = 0.0,
         diversity_prior_path: Optional[str] = None,
+        gender_weight: float = 2000.0,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -227,6 +253,17 @@ class Net(pl.LightningModule):
         # low-cardinality ones in the gradient. `per_gene_loss=False`
         # restores the original flat `nn.MSELoss` behavior for comparison.
         self.loss_fn = PerGeneMSELoss(get_lengths()) if per_gene_loss else torch.nn.MSELoss()
+        # Dedicated gender classification loss (see `GenderBCELoss`), on by
+        # default since plain per-gene MSE was found to systematically
+        # mispredict gender for ambiguous/small-training-set photos (the
+        # gender channel's own MSE term, bounded by [0,255]^2, only gets a
+        # 1/n_genes share of the averaged per-gene loss, same as every other
+        # gene -- but BCE values are O(0.1-5), roughly 4-5 orders of
+        # magnitude smaller than that averaged MSE term (O(1e3-1e4)), so
+        # gender_weight defaults high (2000.0) to give it an outsized,
+        # deliberately non-"equal-weight" share of the gradient; set
+        # gender_weight=0.0 to disable and fall back to plain per-gene MSE.
+        self.gender_loss = GenderBCELoss() if gender_weight > 0 else None
         # Optional secondary regularizer (see `DiversityPriorLoss`):
         # disabled by default (diversity_weight=0.0) to keep prior behavior
         # unchanged unless explicitly opted into via the CLI.
@@ -252,11 +289,20 @@ class Net(pl.LightningModule):
         self.log(f"{stage}_diversity_penalty", penalty, prog_bar=False, on_step=False, on_epoch=True)
         return penalty
 
+    def _gender_penalty(self, preds: torch.Tensor, targets: torch.Tensor, stage: str) -> torch.Tensor:
+        if self.gender_loss is None:
+            return preds.new_zeros(())
+        penalty = self.gender_loss(preds, targets)
+        self.log(f"{stage}_gender_bce", penalty, prog_bar=False, on_step=False, on_epoch=True)
+        return penalty
+
     def training_step(self, batch, batch_idx):
         images, targets = batch
         preds = self(images)
-        loss = self.loss_fn(preds, targets) + self.hparams.diversity_weight * self._diversity_penalty(
-            preds, "train"
+        loss = (
+            self.loss_fn(preds, targets)
+            + self.hparams.diversity_weight * self._diversity_penalty(preds, "train")
+            + self.hparams.gender_weight * self._gender_penalty(preds, targets, "train")
         )
         self.training_step_outputs.append(loss.detach())
         self.log("train_loss", loss, prog_bar=True, on_step=False, on_epoch=True)
@@ -265,8 +311,10 @@ class Net(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         images, targets = batch
         preds = self(images)
-        loss = self.loss_fn(preds, targets) + self.hparams.diversity_weight * self._diversity_penalty(
-            preds, "val"
+        loss = (
+            self.loss_fn(preds, targets)
+            + self.hparams.diversity_weight * self._diversity_penalty(preds, "val")
+            + self.hparams.gender_weight * self._gender_penalty(preds, targets, "val")
         )
         self.validation_step_outputs.append(loss.detach())
         self.log("val_loss", loss, prog_bar=True, on_step=False, on_epoch=True)
@@ -309,6 +357,7 @@ class experiment:
             lr=args.lr,
             diversity_weight=getattr(args, "diversity_weight", 0.0),
             diversity_prior_path=getattr(args, "diversity_prior", None),
+            gender_weight=getattr(args, "gender_weight", 2000.0),
         )
         callbacks = [EarlyStopping(monitor="val_loss", patience=args.val_epochs)]
         logger = TensorBoardLogger(save_dir="tb_logs", name="ck3dna")

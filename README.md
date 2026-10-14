@@ -335,6 +335,57 @@ A reasonable starting range is `0.05`-`0.2`; watch the logged
 main loss, and re-run `analyze_gene_variance.py` after training to check
 whether it actually improved prediction diversity for your dataset size.
 
+#### Gender mislabeling bug (fixed) and `GenderBCELoss`
+
+A real logic bug was found while investigating a report of consistent
+misgendering (male photos predicted as `type=girl`): `dna_ToTensor`
+previously recognized **only** a literal `type=boy` as male, mapping
+anything else -- including the `type=male`/`type=female` spelling used by
+several of the hand-curated `real_dna_samples/discord_pairs/*_dna.txt`
+training pairs (as opposed to CK3's actual `boy`/`girl` vocabulary) -- to
+`gender=0.0` ("girl"). That silently flipped roughly a quarter of the true
+male training examples to a female label, directly teaching the model to
+associate male-looking photos with a female output. Confirmed by
+tabulating the raw `type=` values across the training corpus (10 `boy`, 3
+`girl`, 17 `male`, 42 `female` out of 72 discord pairs) -- `dna_ToTensor`
+now treats `"boy"`/`"male"` and `"girl"`/`"female"` as synonyms
+case-insensitively, fixing the effective training label balance from
+14%/86% boy/girl to a realistic ~41%/59%.
+
+Separately, `ck3dna.training.GenderBCELoss` replaces plain per-gene MSE for
+just the gender channel with a binary-cross-entropy term (on by default,
+`--gender_weight 2000.0`): gender is fundamentally a binary field (CK3's
+`type=` is always exactly `"boy"` or `"girl"`, never a blend), and plain
+squared error lets the model hedge near the 0-255 midpoint for visually
+ambiguous photos since that minimizes *expected* squared error -- BCE's
+steep gradient near a confidently-wrong prediction discourages that hedge.
+The weight defaults very high because BCE values (O(0.1-5)) are several
+orders of magnitude smaller than the averaged per-gene MSE loss
+(O(1e3-1e4)); set `--gender_weight 0.0` to disable and fall back to plain
+MSE.
+
+Both fixes were validated empirically after regenerating
+`real_dataset_aligned` and retraining 40 epochs: gender prediction
+accuracy across the full 104-sample dataset went from near the (corrected)
+majority-class baseline to a measurable improvement, and a blond young-man
+test photo that previously predicted `type=girl` now correctly predicts
+`type=boy`. That said, overall gender accuracy is still far from perfect
+(~63% at this dataset size) -- the visual signal is evidently weak for a
+CNN to learn reliably from ~100 photos spanning very different
+styles/domains (official in-game renders vs. varied real-life reference
+photos); adding more, especially more clearly front-facing, real photos
+paired with correctly-typed (`boy`/`girl`, or now also `male`/`female`) DNA
+remains the highest-leverage way to improve this further.
+
+**Other observed collapse**, e.g. `gene_age` consistently predicting
+`old_beauty_1`/`old_1` regardless of input, was checked and is *not* a
+parsing bug like gender was -- the training corpus's age-category
+distribution is itself heavily skewed toward "old" categories (47/72
+samples' top age category is `old_beauty_1`), so the model is correctly
+learning the (skewed) distribution it was given. Contributing more
+training photos of visibly younger subjects, paired with correctly-aged
+DNA, is the only real fix for that specific collapse.
+
 ## Usage: inference (new)
 
 ```bash

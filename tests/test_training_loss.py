@@ -1,8 +1,9 @@
-"""Tests for ck3dna.training's PerGeneMSELoss (per-gene-normalized loss)
-and DiversityPriorLoss (diversity-collapse regularizer)."""
+"""Tests for ck3dna.training's PerGeneMSELoss (per-gene-normalized loss),
+DiversityPriorLoss (diversity-collapse regularizer), and GenderBCELoss
+(binary gender classification loss)."""
 import torch
 
-from ck3dna.training import DiversityPriorLoss, PerGeneMSELoss
+from ck3dna.training import DiversityPriorLoss, GenderBCELoss, PerGeneMSELoss
 
 
 def test_per_gene_mse_zero_for_identical_tensors():
@@ -79,3 +80,47 @@ def test_diversity_prior_loss_handles_batch_size_one():
     # Std across a single sample is undefined; should degrade gracefully to 0
     # rather than NaN/crash.
     assert loss_fn(pred).item() == 0.0
+
+
+def test_gender_bce_loss_low_when_confident_and_correct():
+    loss_fn = GenderBCELoss()
+    # Confident, correct predictions for both genders.
+    pred = torch.zeros(2, 5)
+    pred[0, 0] = 254.0  # predicted boy
+    pred[1, 0] = 1.0  # predicted girl
+    target = torch.zeros(2, 5)
+    target[0, 0] = 255.0  # true boy
+    target[1, 0] = 0.0  # true girl
+    assert loss_fn(pred, target).item() < 0.05
+
+
+def test_gender_bce_loss_high_when_confidently_wrong():
+    loss_fn = GenderBCELoss()
+    pred = torch.zeros(1, 5)
+    pred[0, 0] = 254.0  # confidently predicted boy
+    target = torch.zeros(1, 5)
+    target[0, 0] = 0.0  # true girl -- confidently wrong
+    assert loss_fn(pred, target).item() > 3.0
+
+
+def test_gender_bce_loss_higher_for_confident_wrong_than_hedged():
+    """A model hedging near the midpoint for an ambiguous photo should be
+    penalized less than one confidently predicting the wrong gender, but
+    more than one confidently predicting the right one -- BCE's asymmetric
+    penalty is what should discourage the midpoint hedge that plain MSE
+    tolerates."""
+    loss_fn = GenderBCELoss()
+    target = torch.zeros(1, 5)
+    target[0, 0] = 255.0  # true boy
+
+    hedged = torch.zeros(1, 5)
+    hedged[0, 0] = 127.5
+    wrong = torch.zeros(1, 5)
+    wrong[0, 0] = 1.0
+    correct = torch.zeros(1, 5)
+    correct[0, 0] = 254.0
+
+    hedged_loss = loss_fn(hedged, target).item()
+    wrong_loss = loss_fn(wrong, target).item()
+    correct_loss = loss_fn(correct, target).item()
+    assert correct_loss < hedged_loss < wrong_loss

@@ -78,6 +78,25 @@ def test_gender_girl_round_trip(tmp_path: Path):
     assert parsed["gender"] == "girl"
 
 
+@pytest.mark.parametrize(
+    "type_value,expected_tensor_value",
+    [("boy", 255.0), ("male", 255.0), ("girl", 0.0), ("female", 0.0), ("Male", 255.0), ("FEMALE", 0.0)],
+)
+def test_dna_to_tensor_accepts_male_female_synonyms(tmp_path: Path, type_value, expected_tensor_value):
+    """Several hand-curated training pairs under real_dna_samples/discord_pairs
+    use `type=male`/`type=female` instead of CK3's native `type=boy`/`type=girl`.
+    dna_ToTensor must treat these as synonyms -- previously only literal "boy"
+    was recognized as male, silently mislabeling every "male"-typed sample as
+    gender=0.0 ("girl") during training.
+    """
+    text = f'ruler_designer_0={{ type={type_value} genes={{ hair_color={{ 1 2 3 4 }} }} }}'
+    path = tmp_path / "sample.txt"
+    path.write_text(text, encoding="utf-8")
+
+    tensor = dna_ToTensor(path)
+    assert tensor[0].item() == expected_tensor_value
+
+
 @pytest.mark.parametrize("sample_path", REAL_RULER_SAMPLES[:5], ids=lambda p: p.stem)
 def test_real_ck3ruler_samples_round_trip(sample_path: Path, tmp_path: Path):
     """Parsing a genuine `.ck3ruler` sample to a tensor and back to text
