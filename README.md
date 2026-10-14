@@ -426,6 +426,37 @@ downside. `gene_jaw_height` eased back to 0.290 (still healthy, above the
 ~0.25 "collapsed" threshold) likely just from run-to-run training variance.
 New default checkpoint: `checkpoints/ck3dna_real104_chineye_epoch39.ckpt`.
 
+**Attempted, reverted: `--lip_weight` (negative result, kept as a cautionary
+note)**: lip-shape sub-genes (`mouth_upper_lip_forward`,
+`mouth_lower_lip_forward`, `mouth_glamour_lips`, `mouth_center_curve`,
+`mouth_philtrum_shape`, etc.) stayed badly collapsed (ratios 0.10-0.31) even
+under the shared 3x `mouth` boost from `--facial_structure_weight` -- much
+worse than other mouth genes like `mouth_height` (~0.45) under the same
+multiplier, consistent with user reports of mismatched lip shape, overly
+forward mouth corners, and a visible seam under the lower lip. A
+`--lip_weight` flag was added (stacks on `mouth`-matched genes, composing
+with `--chin_weight`/`--eye_weight` the same way they compose with
+`--facial_structure_weight`). While implementing it, a real bug was found
+and fixed: `PerGeneMSELoss.forward` normalized by `weights.sum()` (a
+weighted *average*), so adding any new boosted group grew that denominator
+and diluted the *absolute* loss contribution of every other gene -- including
+genes boosted by an earlier, unrelated group. It now normalizes by gene
+*count* instead, so independently-tuned weight groups compose additively
+without interfering (see `test_per_gene_mse_group_weights_compose_without_
+interference`). **Despite that fix, retraining with
+`--facial_structure_weight 3.0 --chin_weight 2.0 --eye_weight 2.0
+--lip_weight 2.5` still regressed most mouth/chin/eye/jaw diversity ratios
+relative to the chin/eye-only checkpoint above** -- confirmed across two
+separate retrains (40 and 80 epochs; doubling epochs did not help and some
+genes, e.g. `jaw_height`, collapsed further to 0.114 at 80 epochs). This
+points to a real training-capacity ceiling on a 104-sample dataset once a
+4th large, overlapping weight group is stacked on top of mouth/jaw/chin/eye,
+rather than a remaining loss-weighting bug. **`--lip_weight` was not
+promoted to the shipped checkpoint** -- `ck3dna_real104_chineye_epoch39.ckpt`
+remains active. If revisiting lip-shape collapse, try `--lip_weight` in
+isolation (without stacking `--chin_weight`/`--eye_weight`) before assuming
+more data is required.
+
 **Other observed collapse**, e.g. `gene_age` consistently predicting
 `old_beauty_1`/`old_1` regardless of input, was checked and is *not* a
 parsing bug like gender was -- the training corpus's age-category

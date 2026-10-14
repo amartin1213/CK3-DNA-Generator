@@ -105,7 +105,20 @@ class PerGeneMSELoss(torch.nn.Module):
             offset += length
             per_gene_losses.append(torch.nn.functional.mse_loss(pred_seg, target_seg))
         losses = torch.stack(per_gene_losses)
-        return (losses * self.weights).sum() / self.weights.sum()
+        # Normalize by gene *count*, not by the weights' sum. Dividing by
+        # weights.sum() turns this into a weighted *average* where adding a
+        # new boosted group (e.g. --lip_weight) grows the denominator and
+        # proportionally shrinks every gene's absolute loss contribution --
+        # including genes boosted by an *earlier*, separate group (e.g.
+        # --chin_weight, --eye_weight). That was caught empirically: adding
+        # --lip_weight 2.5 on top of an already-tuned --chin_weight/
+        # --eye_weight config measurably regressed chin/eye diversity
+        # ratios that a prior retrain (without --lip_weight) had fixed.
+        # Normalizing by count instead keeps every unweighted gene's
+        # absolute contribution constant (matches plain equal-weighting when
+        # all weights are 1.0) and makes each group's boost purely additive,
+        # so independently-tuned weight groups compose without interfering.
+        return (losses * self.weights).sum() / len(self.weights)
 
 
 class GenderBCELoss(torch.nn.Module):
@@ -280,6 +293,7 @@ class Net(pl.LightningModule):
         facial_structure_weight: float = 1.0,
         chin_weight: float = 1.0,
         eye_weight: float = 1.0,
+        lip_weight: float = 1.0,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -302,6 +316,20 @@ class Net(pl.LightningModule):
         # `eye_weight` is a separate group for "eye"-named genes, added after
         # a user report that eye angle/shape looked off; this group wasn't
         # covered by facial_structure_weight at all previously.
+        # `lip_weight` stacks a further multiplier on top of the shared
+        # "mouth" group for "lip"-named genes specifically (e.g.
+        # mouth_upper_lip_*, mouth_lower_lip_*, mouth_*_lip_forward/profile/
+        # glamour_lips/philtrum): a user report of "lack of lip similarity",
+        # overly-forward mouth corners, and a visible seam under the lower
+        # lip traced back to these lip-shape sub-genes staying badly
+        # collapsed (ratios ~0.10-0.31) even under the overall 3x "mouth"
+        # boost from facial_structure_weight -- much worse than other
+        # mouth genes like mouth_height (~0.45) receiving the same
+        # multiplier, so the lip-shape genes needed an extra push. Since
+        # "lip" is a distinct dict key from "mouth"/"chin"/"jaw"/"eye", it
+        # composes automatically in `PerGeneMSELoss` (multiplicative across
+        # every substring that matches a gene's name) without needing an
+        # explicit merge like `chin_weight` does.
         if per_gene_loss:
             group_weights: Dict[str, float] = {}
             if facial_structure_weight != 1.0:
@@ -312,6 +340,8 @@ class Net(pl.LightningModule):
                 group_weights["chin"] = group_weights.get("chin", 1.0) * chin_weight
             if eye_weight != 1.0:
                 group_weights["eye"] = eye_weight
+            if lip_weight != 1.0:
+                group_weights["lip"] = lip_weight
             self.loss_fn = PerGeneMSELoss(
                 get_lengths(), names=get_gene_names(), group_weights=group_weights or None
             )
@@ -425,6 +455,7 @@ class experiment:
             facial_structure_weight=getattr(args, "facial_structure_weight", 1.0),
             chin_weight=getattr(args, "chin_weight", 1.0),
             eye_weight=getattr(args, "eye_weight", 1.0),
+            lip_weight=getattr(args, "lip_weight", 1.0),
         )
         callbacks = [EarlyStopping(monitor="val_loss", patience=args.val_epochs)]
         logger = TensorBoardLogger(save_dir="tb_logs", name="ck3dna")

@@ -137,6 +137,23 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "Try 2.0-3.0."
         ),
     )
+    parser.add_argument(
+        "--lip_weight",
+        type=float,
+        default=1.0,
+        help=(
+            "Extra multiplier (stacked on top of --facial_structure_weight) "
+            "applied only to genes whose name contains 'lip' (1.0 = "
+            "disabled). Added after lip-shape sub-genes (upper/lower lip "
+            "forward, profile, glamour_lips, center_curve, philtrum_shape) "
+            "stayed badly collapsed (ratios ~0.10-0.31) even under the "
+            "overall 3x 'mouth' boost from --facial_structure_weight -- "
+            "much worse than other mouth genes like mouth_height (~0.45) "
+            "under the same multiplier. Reported in practice as mismatched "
+            "lip shape, overly-forward mouth corners, and a visible seam "
+            "under the lower lip. Try 2.0-3.0."
+        ),
+    )
     return parser
 
 

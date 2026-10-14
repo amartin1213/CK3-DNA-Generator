@@ -52,8 +52,7 @@ def test_per_gene_mse_matches_elementwise_when_segments_equal_length():
 
 def test_per_gene_mse_group_weights_upweight_matching_genes():
     """`group_weights` should give genes matching a name substring a larger
-    share of the averaged loss, without needing a weight per individual
-    gene."""
+    share of the loss, without needing a weight per individual gene."""
     lengths = [1, 1, 1]
     names = ["gene_mouth_size", "gene_jaw_def", "gene_eye_color"]
     loss_fn = PerGeneMSELoss(lengths, names=names, group_weights={"mouth": 3.0, "jaw": 3.0})
@@ -63,19 +62,46 @@ def test_per_gene_mse_group_weights_upweight_matching_genes():
     pred[0, 0] = 10.0  # error only in the "mouth" gene
 
     weighted = loss_fn(pred, target).item()
-    # Equal weighting (facial_structure_weight disabled) would give
-    # 100/3 ~= 33.33; with 3x weight on mouth/jaw, mouth's full-error
-    # contributes 3x its share: (3*100)/(3+3+1) = 42.857...
+    # Normalized by gene *count* (3), not by the weights' sum: mouth's full
+    # error (100) contributes at its 3x weight, divided by 3 genes ->
+    # (3*100)/3 = 100. Equal weighting (no group_weights) would give
+    # 100/3 ~= 33.33, so this is 3x that, matching the 3x multiplier.
     assert weighted > 100.0 / 3.0
-    assert abs(weighted - (3 * 100.0) / 7.0) < 1e-4
+    assert abs(weighted - (3 * 100.0) / 3.0) < 1e-4
 
-    # Flip the error onto the unweighted "eye_color" gene instead: it should
-    # contribute *less* than before since the weighted denominator is larger.
+    # Flip the error onto the unweighted "eye_color" gene instead: its own
+    # contribution is unaffected by other genes' weights (100/3, same as if
+    # group_weights were empty) -- unlike a weighted-*average* normalization,
+    # which would shrink it as other genes' weights grow.
     pred2 = torch.zeros(1, 3)
     pred2[0, 2] = 10.0
     unweighted_gene_loss = loss_fn(pred2, target).item()
     assert unweighted_gene_loss < weighted
-    assert abs(unweighted_gene_loss - 100.0 / 7.0) < 1e-4
+    assert abs(unweighted_gene_loss - 100.0 / 3.0) < 1e-4
+
+
+def test_per_gene_mse_group_weights_compose_without_interference():
+    """Adding a new, non-overlapping weighted group (e.g. --lip_weight)
+    should not change the absolute loss contribution of a gene boosted by a
+    *different*, independently-configured group (e.g. --chin_weight). This
+    guards against a real regression: normalizing by `weights.sum()` (a
+    weighted average) let a later --lip_weight retrain measurably dilute an
+    already-tuned --chin_weight/--eye_weight gene's effective gradient,
+    even though their weights themselves never changed."""
+    lengths = [1, 1, 1]
+    names = ["gene_chin_height", "gene_lip_width", "gene_eye_color"]
+
+    chin_only = PerGeneMSELoss(lengths, names=names, group_weights={"chin": 6.0})
+    chin_and_lip = PerGeneMSELoss(lengths, names=names, group_weights={"chin": 6.0, "lip": 2.5})
+
+    target = torch.zeros(1, 3)
+    pred = torch.zeros(1, 3)
+    pred[0, 0] = 10.0  # error only in the "chin" gene
+
+    chin_loss_alone = chin_only(pred, target).item()
+    chin_loss_with_lip_added = chin_and_lip(pred, target).item()
+    assert abs(chin_loss_alone - chin_loss_with_lip_added) < 1e-4
+
 
 
 def test_diversity_prior_loss_zero_when_batch_already_diverse():
