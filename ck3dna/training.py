@@ -243,7 +243,7 @@ class Net(pl.LightningModule):
         per_gene_loss: bool = True,
         diversity_weight: float = 0.0,
         diversity_prior_path: Optional[str] = None,
-        gender_weight: float = 2000.0,
+        gender_weight: float = 300.0,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -357,7 +357,7 @@ class experiment:
             lr=args.lr,
             diversity_weight=getattr(args, "diversity_weight", 0.0),
             diversity_prior_path=getattr(args, "diversity_prior", None),
-            gender_weight=getattr(args, "gender_weight", 2000.0),
+            gender_weight=getattr(args, "gender_weight", 300.0),
         )
         callbacks = [EarlyStopping(monitor="val_loss", patience=args.val_epochs)]
         logger = TensorBoardLogger(save_dir="tb_logs", name="ck3dna")

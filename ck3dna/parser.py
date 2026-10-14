@@ -75,16 +75,22 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--gender_weight",
         type=float,
-        default=2000.0,
+        default=300.0,
         help=(
             "Weight for the dedicated GenderBCELoss term on the DNA tensor's "
             "binary gender channel (0 = disabled, falling back to treating "
             "gender as a plain per-gene MSE regression target like every "
-            "other gene). Default is high (2000.0) because BCE values are "
-            "several orders of magnitude smaller than the averaged per-gene "
-            "MSE loss, so a small weight would leave it negligible. This "
-            "fixes a real misgendering failure mode seen with plain MSE on "
-            "this fundamentally binary ('boy'/'girl', never a blend) trait."
+            "other gene). BCE values are several orders of magnitude smaller "
+            "than the averaged per-gene MSE loss, so a small weight would "
+            "leave it negligible -- but an initial 2000.0 default was found "
+            "empirically to be *too* dominant: it meaningfully regressed "
+            "overall prediction diversity (0.380->0.218 on the real104 "
+            "diversity-ratio check), hitting mouth/chin genes hardest since "
+            "their small (1-3 dim) segments get the least gradient signal "
+            "relative to gender's now-oversized term. 300.0 recovers most of "
+            "that diversity (ratio 0.309) for a small (~5pp) full-dataset "
+            "gender-accuracy tradeoff; combine with --diversity_weight "
+            "0.2-0.3 to recover further."
         ),
     )
     return parser

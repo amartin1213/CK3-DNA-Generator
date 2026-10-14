@@ -354,15 +354,12 @@ case-insensitively, fixing the effective training label balance from
 
 Separately, `ck3dna.training.GenderBCELoss` replaces plain per-gene MSE for
 just the gender channel with a binary-cross-entropy term (on by default,
-`--gender_weight 2000.0`): gender is fundamentally a binary field (CK3's
+`--gender_weight 300.0`): gender is fundamentally a binary field (CK3's
 `type=` is always exactly `"boy"` or `"girl"`, never a blend), and plain
 squared error lets the model hedge near the 0-255 midpoint for visually
 ambiguous photos since that minimizes *expected* squared error -- BCE's
 steep gradient near a confidently-wrong prediction discourages that hedge.
-The weight defaults very high because BCE values (O(0.1-5)) are several
-orders of magnitude smaller than the averaged per-gene MSE loss
-(O(1e3-1e4)); set `--gender_weight 0.0` to disable and fall back to plain
-MSE.
+Set `--gender_weight 0.0` to disable and fall back to plain MSE.
 
 Both fixes were validated empirically after regenerating
 `real_dataset_aligned` and retraining 40 epochs: gender prediction
@@ -370,12 +367,27 @@ accuracy across the full 104-sample dataset went from near the (corrected)
 majority-class baseline to a measurable improvement, and a blond young-man
 test photo that previously predicted `type=girl` now correctly predicts
 `type=boy`. That said, overall gender accuracy is still far from perfect
-(~63% at this dataset size) -- the visual signal is evidently weak for a
+(~60-63% at this dataset size) -- the visual signal is evidently weak for a
 CNN to learn reliably from ~100 photos spanning very different
 styles/domains (official in-game renders vs. varied real-life reference
 photos); adding more, especially more clearly front-facing, real photos
 paired with correctly-typed (`boy`/`girl`, or now also `male`/`female`) DNA
 remains the highest-leverage way to improve this further.
+
+**Gender weight vs. overall diversity tradeoff**: an initial `--gender_weight
+2000.0` was found, via `scripts/analyze_gene_variance.py`, to *regress*
+overall prediction diversity substantially (ratio 0.380 -> 0.218), hitting
+the mouth and chin genes hardest of all (e.g. `gene_mouth_upper_lip_size`,
+`gene_chin_height` ratios as low as 0.11-0.15) -- the small 1-3 dim
+mouth/chin segments get comparatively little gradient signal even under
+`PerGeneMSELoss`'s per-gene equal weighting, so an oversized gender term
+can effectively starve them further. Reducing to `--gender_weight 300.0`
+(the new default) recovered most of that diversity (ratio 0.309, mouth/chin
+genes roughly doubled) for only a ~3-5 percentage point full-dataset gender
+accuracy cost; pair with `--diversity_weight 0.2-0.3` to recover further.
+If a future retrain still shows particular gene groups collapsing, re-run
+`analyze_gene_variance.py --top 200` and grep for that group's prefix (e.g.
+`mouth_`/`chin_`) to check before assuming it's fixed.
 
 **Other observed collapse**, e.g. `gene_age` consistently predicting
 `old_beauty_1`/`old_1` regardless of input, was checked and is *not* a
