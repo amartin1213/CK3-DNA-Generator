@@ -389,6 +389,25 @@ If a future retrain still shows particular gene groups collapsing, re-run
 `analyze_gene_variance.py --top 200` and grep for that group's prefix (e.g.
 `mouth_`/`chin_`) to check before assuming it's fixed.
 
+**Dedicated mouth/jaw/chin weighting (`--facial_structure_weight`)**: even
+after the gender-weight rebalance above, mouth/jaw/chin genes remained the
+single most collapsed group relative to other genes of similar segment
+size (reported in practice as puffy/overfull lips, a missing jawline, and
+chin height not tracking the photo). `PerGeneMSELoss` now accepts an
+optional per-gene-name `group_weights` multiplier (wired via
+`--facial_structure_weight`, default `1.0` = disabled) that upweights any
+gene whose name contains `mouth`, `jaw`, or `chin` within the existing
+per-gene-equal-weighting scheme -- i.e. these genes get an extra boost on
+top of their usual equal 1/n_genes share, the same way `GenderBCELoss` gets
+an outsized share via `--gender_weight`. Retraining with
+`--facial_structure_weight 3.0` (combined with `--gender_weight 300.0
+--diversity_weight 0.3`) raised mouth/jaw/chin gene ratios from ~0.11-0.15
+to ~0.23-0.43 (roughly doubled-to-tripled), while *also* improving overall
+diversity (ratio 0.309 -> 0.323) and full-dataset gender accuracy (60.6% ->
+65.4%) -- unlike the earlier gender-weight tradeoff, this one had no
+downside on the metrics checked. New default checkpoint:
+`checkpoints/ck3dna_real104_facial_epoch39.ckpt`.
+
 **Other observed collapse**, e.g. `gene_age` consistently predicting
 `old_beauty_1`/`old_1` regardless of input, was checked and is *not* a
 parsing bug like gender was -- the training corpus's age-category

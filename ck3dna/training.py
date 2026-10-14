@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import pytorch_lightning as pl
 import torch
@@ -67,11 +67,34 @@ class PerGeneMSELoss(torch.nn.Module):
     gradient purely by dimension count, while low-cardinality genes get
     diluted. Averaging per-gene first gives every gene equal weight
     regardless of how many categories it has.
+
+    `gene_weights` (name -> multiplier, matched by exact gene name) lets
+    specific genes get *more* than that equal share. Added after
+    `scripts/analyze_gene_variance.py` found that mouth/jaw/chin genes
+    stayed collapsed (predictions clustering near a fixed blend rather than
+    responding to the input photo -- reported in practice as "puffy lips",
+    "no jawline", "chin too high") even with equal per-gene weighting,
+    worse than other genes of similar segment size. `names`/`group_weights`
+    is a convenience that applies a multiplier to every gene whose name
+    contains a given substring (e.g. ``{"mouth": 3.0, "jaw": 3.0, "chin": 3.0}``).
     """
 
-    def __init__(self, lengths):
+    def __init__(
+        self,
+        lengths,
+        names: Optional[List[str]] = None,
+        group_weights: Optional[Dict[str, float]] = None,
+    ):
         super().__init__()
         self.lengths = list(lengths)
+        weights = [1.0] * len(self.lengths)
+        if names is not None and group_weights:
+            assert len(names) == len(self.lengths), "names must align with lengths"
+            for i, name in enumerate(names):
+                for substr, mult in group_weights.items():
+                    if substr in name:
+                        weights[i] *= mult
+        self.register_buffer("weights", torch.tensor(weights, dtype=torch.float32))
 
     def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         offset = 0
@@ -81,7 +104,8 @@ class PerGeneMSELoss(torch.nn.Module):
             target_seg = target[:, offset : offset + length]
             offset += length
             per_gene_losses.append(torch.nn.functional.mse_loss(pred_seg, target_seg))
-        return torch.stack(per_gene_losses).mean()
+        losses = torch.stack(per_gene_losses)
+        return (losses * self.weights).sum() / self.weights.sum()
 
 
 class GenderBCELoss(torch.nn.Module):
@@ -109,6 +133,16 @@ class GenderBCELoss(torch.nn.Module):
         return torch.nn.functional.binary_cross_entropy(pred_prob, target_prob)
 
 
+def get_gene_names() -> List[str]:
+    """Return the flattened DNA tensor's per-segment gene names, in the same
+    order as `ck3dna.gene_dicts.get_lengths()` (the 4 fixed leading segments
+    -- gender, hair/skin/eye color -- followed by every categorical gene in
+    `gene_dicts.json` order).
+    """
+    gene_dicts = load_gene_dicts()
+    return ["gender", "hair_color", "skin_color", "eye_color"] + list(gene_dicts.keys())
+
+
 def load_diversity_prior_stds(path=DEFAULT_DIVERSITY_PRIOR_PATH, lengths: Optional[List[int]] = None) -> List[float]:
     """Load the per-gene-segment target standard deviations produced by
     `scripts/build_dna_prior.py`, in the same gene order as `get_lengths()`
@@ -117,8 +151,7 @@ def load_diversity_prior_stds(path=DEFAULT_DIVERSITY_PRIOR_PATH, lengths: Option
         lengths = get_lengths()
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
-    gene_dicts = load_gene_dicts()
-    names = ["gender", "hair_color", "skin_color", "eye_color"] + list(gene_dicts.keys())
+    names = get_gene_names()
     per_gene_std = data["per_gene_std"]
     stds = [per_gene_std[name] for name in names]
     assert len(stds) == len(lengths), "diversity prior gene count doesn't match gene_dicts"
@@ -244,6 +277,7 @@ class Net(pl.LightningModule):
         diversity_weight: float = 0.0,
         diversity_prior_path: Optional[str] = None,
         gender_weight: float = 300.0,
+        facial_structure_weight: float = 1.0,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -252,7 +286,20 @@ class Net(pl.LightningModule):
         # per-raw-element so high-cardinality genes don't drown out
         # low-cardinality ones in the gradient. `per_gene_loss=False`
         # restores the original flat `nn.MSELoss` behavior for comparison.
-        self.loss_fn = PerGeneMSELoss(get_lengths()) if per_gene_loss else torch.nn.MSELoss()
+        # `facial_structure_weight` (>1.0) additionally upweights mouth/jaw/
+        # chin genes specifically: `analyze_gene_variance.py` found these
+        # stayed collapsed (near-constant blended predictions, reported as
+        # "puffy lips"/"no jawline"/"chin too high") even under equal
+        # per-gene weighting, worse than other genes of similar size.
+        if per_gene_loss:
+            group_weights = (
+                {"mouth": facial_structure_weight, "jaw": facial_structure_weight, "chin": facial_structure_weight}
+                if facial_structure_weight != 1.0
+                else None
+            )
+            self.loss_fn = PerGeneMSELoss(get_lengths(), names=get_gene_names(), group_weights=group_weights)
+        else:
+            self.loss_fn = torch.nn.MSELoss()
         # Dedicated gender classification loss (see `GenderBCELoss`), on by
         # default since plain per-gene MSE was found to systematically
         # mispredict gender for ambiguous/small-training-set photos (the
@@ -358,6 +405,7 @@ class experiment:
             diversity_weight=getattr(args, "diversity_weight", 0.0),
             diversity_prior_path=getattr(args, "diversity_prior", None),
             gender_weight=getattr(args, "gender_weight", 300.0),
+            facial_structure_weight=getattr(args, "facial_structure_weight", 1.0),
         )
         callbacks = [EarlyStopping(monitor="val_loss", patience=args.val_epochs)]
         logger = TensorBoardLogger(save_dir="tb_logs", name="ck3dna")

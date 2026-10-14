@@ -93,6 +93,23 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "0.2-0.3 to recover further."
         ),
     )
+    parser.add_argument(
+        "--facial_structure_weight",
+        type=float,
+        default=1.0,
+        help=(
+            "Extra multiplier (applied within PerGeneMSELoss) for every "
+            "gene whose name contains 'mouth', 'jaw', or 'chin' (1.0 = "
+            "disabled, same equal per-gene weighting as every other gene). "
+            "analyze_gene_variance.py found these specific gene groups stay "
+            "collapsed -- predictions clustering near a fixed blend "
+            "regardless of the input photo -- worse than other genes of "
+            "similar segment size, reported in practice as puffy/overfull "
+            "lips, a missing jawline, and chin height not tracking the "
+            "photo. Try 2.0-4.0; combine with --gender_weight and "
+            "--diversity_weight as needed."
+        ),
+    )
     return parser
 
 

@@ -50,6 +50,34 @@ def test_per_gene_mse_matches_elementwise_when_segments_equal_length():
     assert abs(per_gene - plain) < 1e-5
 
 
+def test_per_gene_mse_group_weights_upweight_matching_genes():
+    """`group_weights` should give genes matching a name substring a larger
+    share of the averaged loss, without needing a weight per individual
+    gene."""
+    lengths = [1, 1, 1]
+    names = ["gene_mouth_size", "gene_jaw_def", "gene_eye_color"]
+    loss_fn = PerGeneMSELoss(lengths, names=names, group_weights={"mouth": 3.0, "jaw": 3.0})
+
+    target = torch.zeros(1, 3)
+    pred = torch.zeros(1, 3)
+    pred[0, 0] = 10.0  # error only in the "mouth" gene
+
+    weighted = loss_fn(pred, target).item()
+    # Equal weighting (facial_structure_weight disabled) would give
+    # 100/3 ~= 33.33; with 3x weight on mouth/jaw, mouth's full-error
+    # contributes 3x its share: (3*100)/(3+3+1) = 42.857...
+    assert weighted > 100.0 / 3.0
+    assert abs(weighted - (3 * 100.0) / 7.0) < 1e-4
+
+    # Flip the error onto the unweighted "eye_color" gene instead: it should
+    # contribute *less* than before since the weighted denominator is larger.
+    pred2 = torch.zeros(1, 3)
+    pred2[0, 2] = 10.0
+    unweighted_gene_loss = loss_fn(pred2, target).item()
+    assert unweighted_gene_loss < weighted
+    assert abs(unweighted_gene_loss - 100.0 / 7.0) < 1e-4
+
+
 def test_diversity_prior_loss_zero_when_batch_already_diverse():
     lengths = [1, 4]
     loss_fn = DiversityPriorLoss(lengths, target_stds=[1.0, 2.0])
