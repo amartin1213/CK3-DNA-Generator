@@ -38,7 +38,7 @@ from typing import Dict, List, Optional
 
 import pytorch_lightning as pl
 import torch
-from pytorch_lightning.callbacks import EarlyStopping
+from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
 from torch.utils.data import DataLoader, Dataset, random_split
 
@@ -457,7 +457,20 @@ class experiment:
             eye_weight=getattr(args, "eye_weight", 1.0),
             lip_weight=getattr(args, "lip_weight", 1.0),
         )
-        callbacks = [EarlyStopping(monitor="val_loss", patience=args.val_epochs)]
+        callbacks = [
+            EarlyStopping(monitor="val_loss", patience=args.val_epochs),
+            # Without an explicit monitored ModelCheckpoint, Lightning's default
+            # checkpointing behavior only saves the *last* epoch seen before
+            # training stops -- not the epoch with the lowest val_loss. On this
+            # dataset's small size, val_loss is volatile late in training (it
+            # can drift back up during the EarlyStopping patience window before
+            # the patience counter finally expires), so the "last" epoch can be
+            # measurably worse than the best one seen a few epochs earlier.
+            # Saving top_k=1 by val_loss ensures the checkpoint actually used
+            # for inference is the best one, not whatever epoch happened to be
+            # current when patience ran out.
+            ModelCheckpoint(monitor="val_loss", mode="min", save_top_k=1, filename="best-{epoch}-{val_loss:.4f}"),
+        ]
         logger = TensorBoardLogger(save_dir="tb_logs", name="ck3dna")
         self.trainer = pl.Trainer(
             max_epochs=args.epochs,
