@@ -491,6 +491,79 @@ learning the (skewed) distribution it was given. Contributing more
 training photos of visibly younger subjects, paired with correctly-aged
 DNA, is the only real fix for that specific collapse.
 
+**Synthetic Blender-render augmentation experiment (106 real -> +100 synthetic,
+`gene_bs_jaw_def`/jaw/chin diversity motivation)**: to address jaw/chin
+predictions clustering too close to one blend regardless of input photo,
+`scripts/generate_synthetic_dataset.py` (randomly deforms a base head mesh
+in Blender via bone-driven genes, renders a portrait, and writes the ground
+truth DNA) was used to generate synthetic (photo, DNA) pairs to supplement
+the 106 real samples. Two real bugs were found and fixed along the way,
+neither of which turned out to be the dominant cause of a severe diversity
+regression (see below):
+
+1. **Donor-template bug**: every synthetic sample's non-rendered genes were
+   copied from one single static `default_dna.txt` template, making ~90% of
+   each synthetic DNA file identical across all 400 samples regardless of
+   the photo -- a trivially-exploitable shortcut for the model to learn
+   ("ignore the photo, predict the template"). Fixed by sampling a random
+   real male `.ck3ruler` file as the per-sample donor template instead.
+2. **Texture-corruption bug** (`scripts/ck3_render_full.py`,
+   `fix_skin_texture()`): the head mesh's single material has 3 placeholder
+   texture nodes, and the old classification logic only recognized a
+   *direct* link to a Normal Map node as "this placeholder needs a flat
+   fallback, not the face photo". Two of the three placeholders (a
+   roughness map and a chin-decal normal map) route through intermediate
+   Separate/Combine Color nodes and were missed, so both received the vivid
+   face-photo fallback -- producing per-pixel "fake shading" blotches
+   (dark patches on jaw/cheek/mouth, black eye sockets) on every render,
+   regardless of pose. Fixed by classifying placeholders by name substring
+   ("normal"/"roughness"/"specular"/etc.) instead of tracing the node graph,
+   using small generated flat-color fallback images for non-color inputs.
+
+With both bugs fixed, three real retrains were run and validated against
+`scripts/analyze_gene_variance.py`'s prediction-diversity ratio (predicted
+std / ground-truth std across `real_dataset_aligned`, 1.0 = fully tracking
+real variation) -- the real-only baseline (`ck3dna_real104_lip15_epoch16.ckpt`)
+scores **0.439 overall** (Color 0.484, Shape 0.494):
+
+| Retrain | synthetic:real ratio | overall | Color | Shape | jaw/chin genes |
+|---|---|---|---|---|---|
+| donor-fix only, texture bug still present | 400:106 | 0.183 | 0.191 | 0.216 | ~0.13-0.22 |
+| + texture fix | 400:106 | 0.144 | 0.159 | 0.164 | ~0.13-0.22 |
+| + texture fix, reduced ratio | 100:106 | **0.308** | 0.349 | 0.369 | ~0.25-0.41 |
+| + texture fix, reduced ratio, `--synthetic_weight 0.3` | 50:106 | 0.282 | 0.406 | 0.321 | ~0.23-0.35 |
+
+Key findings:
+- Fixing the texture corruption, despite being a genuine render-quality bug
+  worth fixing on its own, did **not** improve measured diversity (0.144 vs
+  0.183) -- ruling out render fidelity as the dominant cause.
+- The 400:106 (~4:1) synthetic:real ratio was the dominant cause: diluting
+  the real-photo-correlated gradient signal with 4x as many synthetic
+  samples severely collapsed predictions, confirmed by shrinking the ratio
+  to 100:106 (~1:1), which recovered most (but not all) of the diversity
+  gap uniformly across every gene group, not just jaw/chin.
+- Further shrinking the ratio to 50:106 and additionally down-weighting
+  synthetic samples in the loss (new `--synthetic_weight` flag, see below)
+  did not help further -- it landed at essentially the same place (slightly
+  worse overall, similar jaw/chin), suggesting ~100:106 is close to this
+  dataset's practical sweet spot rather than "less synthetic is strictly
+  better."
+- None of the synthetic-augmented retrains fully recovered the real-only
+  baseline's diversity across every gene group. **Promoted anyway** as the
+  best available checkpoint incorporating synthetic jaw/chin signal,
+  accepting the remaining gap as a known limitation pending more real
+  training photos with diverse jaw/chin shapes (the more durable fix).
+
+**New default checkpoint: `checkpoints/ck3dna_combined206_synth100_epoch30.ckpt`**
+(106 real + 100 texture-fixed synthetic samples, early-stopped at epoch
+30/40), replacing `ck3dna_real104_lip15_epoch16.ckpt`.
+
+**New `--synthetic_weight` flag**: lets a combined dataset down-weight
+samples in the loss without changing the real:synthetic sample count,
+by marking synthetic `portraits#i` folders with an empty `SYNTHETIC` file
+(see `PortraitDnaDataset`). `--synthetic_weight 1.0` (default) is a no-op;
+all samples count equally, matching prior behavior exactly.
+
 ## Usage: inference (new)
 
 ```bash

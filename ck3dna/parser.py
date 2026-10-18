@@ -154,6 +154,24 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "under the lower lip. Try 2.0-3.0."
         ),
     )
+    parser.add_argument(
+        "--synthetic_weight",
+        type=float,
+        default=1.0,
+        help=(
+            "Per-sample loss weight (0.0-1.0) applied to any dataset sample "
+            "whose portrait folder contains a 'SYNTHETIC' marker file (1.0 "
+            "= disabled, every sample counts equally). Lets a combined "
+            "real+synthetic dataset down-weight synthetic Blender renders "
+            "in the loss without changing the real:synthetic sample *count* "
+            "ratio. Added after an unweighted 400:106 synthetic:real ratio "
+            "was found to severely dilute prediction diversity relative to "
+            "the real-only baseline (overall diversity ratio 0.14-0.18 vs "
+            "baseline 0.44), and shrinking the ratio alone (100:106) only "
+            "partially recovered it (0.31). Try 0.2-0.5 combined with a "
+            "reduced synthetic:real ratio."
+        ),
+    )
     return parser
 
 

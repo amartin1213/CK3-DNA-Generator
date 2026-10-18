@@ -96,29 +96,55 @@ class PerGeneMSELoss(torch.nn.Module):
                         weights[i] *= mult
         self.register_buffer("weights", torch.tensor(weights, dtype=torch.float32))
 
-    def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, pred: torch.Tensor, target: torch.Tensor, sample_weights: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
+        # `sample_weights` (optional, shape (batch,)) lets individual rows
+        # of the batch count for more/less than 1.0 toward the loss -- used
+        # to down-weight synthetic-render samples relative to real photos
+        # (see `--synthetic_weight`) without having to change the dataset
+        # mixing ratio. When None, every sample counts equally, which is
+        # mathematically identical to the previous plain `mse_loss`-per-
+        # segment implementation (both reduce to a mean over every element
+        # of the segment, since every row has the same segment length).
         offset = 0
         per_gene_losses = []
         for length in self.lengths:
             pred_seg = pred[:, offset : offset + length]
             target_seg = target[:, offset : offset + length]
             offset += length
-            per_gene_losses.append(torch.nn.functional.mse_loss(pred_seg, target_seg))
-        losses = torch.stack(per_gene_losses)
-        # Normalize by gene *count*, not by the weights' sum. Dividing by
-        # weights.sum() turns this into a weighted *average* where adding a
-        # new boosted group (e.g. --lip_weight) grows the denominator and
-        # proportionally shrinks every gene's absolute loss contribution --
-        # including genes boosted by an *earlier*, separate group (e.g.
-        # --chin_weight, --eye_weight). That was caught empirically: adding
-        # --lip_weight 2.5 on top of an already-tuned --chin_weight/
-        # --eye_weight config measurably regressed chin/eye diversity
-        # ratios that a prior retrain (without --lip_weight) had fixed.
-        # Normalizing by count instead keeps every unweighted gene's
-        # absolute contribution constant (matches plain equal-weighting when
-        # all weights are 1.0) and makes each group's boost purely additive,
-        # so independently-tuned weight groups compose without interfering.
-        return (losses * self.weights).sum() / len(self.weights)
+            if sample_weights is None:
+                per_gene_losses.append(torch.nn.functional.mse_loss(pred_seg, target_seg))
+            else:
+                # Mean over the segment's feature dim first, giving one
+                # scalar loss per batch row, so each row can be weighted
+                # independently before the batch is collapsed.
+                per_sample = (pred_seg - target_seg).pow(2).mean(dim=1)
+                per_gene_losses.append(per_sample)
+        if sample_weights is None:
+            losses = torch.stack(per_gene_losses)
+            # Normalize by gene *count*, not by the weights' sum. Dividing by
+            # weights.sum() turns this into a weighted *average* where adding a
+            # new boosted group (e.g. --lip_weight) grows the denominator and
+            # proportionally shrinks every gene's absolute loss contribution --
+            # including genes boosted by an *earlier*, separate group (e.g.
+            # --chin_weight, --eye_weight). That was caught empirically: adding
+            # --lip_weight 2.5 on top of an already-tuned --chin_weight/
+            # --eye_weight config measurably regressed chin/eye diversity
+            # ratios that a prior retrain (without --lip_weight) had fixed.
+            # Normalizing by count instead keeps every unweighted gene's
+            # absolute contribution constant (matches plain equal-weighting when
+            # all weights are 1.0) and makes each group's boost purely additive,
+            # so independently-tuned weight groups compose without interfering.
+            return (losses * self.weights).sum() / len(self.weights)
+        # (batch, num_genes) -> per-row weighted-gene-average loss, then a
+        # sample_weights-weighted mean across the batch (same normalize-by-
+        # count-not-sum reasoning as above, applied per row).
+        per_gene = torch.stack(per_gene_losses, dim=1)
+        per_row = (per_gene * self.weights).sum(dim=1) / len(self.weights)
+        sample_weights = sample_weights.to(per_row.dtype)
+        denom = sample_weights.sum().clamp_min(1e-8)
+        return (per_row * sample_weights).sum() / denom
 
 
 class GenderBCELoss(torch.nn.Module):
@@ -216,16 +242,33 @@ class PortraitDnaDataset(Dataset):
     """Pairs one serialized portrait tensor with its parsed DNA tensor, one
     sample per ``portraits#i`` folder (see module docstring for the expected
     layout and the 1-image-per-folder simplifying assumption).
+
+    Also emits a per-sample scalar loss weight (3rd tuple element): 1.0 by
+    default, or ``synthetic_weight`` for any ``portraits#i`` folder marked as
+    synthetic via a ``SYNTHETIC`` marker file (an empty file dropped in the
+    folder when merging a synthetic render batch into a combined dataset --
+    see the ad hoc merge steps noted in the project history; there is no
+    dedicated merge script). This lets a combined real+synthetic dataset
+    down-weight synthetic renders in the loss (``--synthetic_weight < 1.0``)
+    without having to change the real:synthetic sample *count* ratio, after
+    `scripts/analyze_gene_variance.py` found that an unweighted 400:106
+    synthetic:real ratio severely diluted prediction diversity relative to
+    the real-only baseline, and that shrinking the ratio alone only
+    partially recovered it.
     """
 
-    def __init__(self, root: str):
+    SYNTHETIC_MARKER_NAME = "SYNTHETIC"
+
+    def __init__(self, root: str, synthetic_weight: float = 1.0):
         self.root = Path(root)
+        self.synthetic_weight = synthetic_weight
         self.samples = []
         for portrait_dir in sorted(p for p in self.root.iterdir() if p.is_dir()):
             image_tensors = sorted(portrait_dir.glob("angle#*.pt"))
             dna_files = sorted(portrait_dir.glob("dna#*.txt")) + sorted(portrait_dir.glob("dna#*.ck3ruler"))
             if image_tensors and dna_files:
-                self.samples.append((image_tensors[0], dna_files[0]))
+                is_synthetic = (portrait_dir / self.SYNTHETIC_MARKER_NAME).exists()
+                self.samples.append((image_tensors[0], dna_files[0], is_synthetic))
         if not self.samples:
             raise RuntimeError(
                 f"No (image, dna) pairs found under {root}. Did you run "
@@ -236,22 +279,31 @@ class PortraitDnaDataset(Dataset):
         return len(self.samples)
 
     def __getitem__(self, index: int):
-        image_path, dna_path = self.samples[index]
+        image_path, dna_path, is_synthetic = self.samples[index]
         image = _portrait_loader(image_path)
         dna = dna_ToTensor(dna_path)
-        return image, dna
+        weight = torch.tensor(self.synthetic_weight if is_synthetic else 1.0, dtype=torch.float32)
+        return image, dna, weight
 
 
 class PortraitDnaDataModule(pl.LightningDataModule):
-    def __init__(self, datastore_name: str, batch_size: int = 16, workers: int = 0, val_ratio: float = 0.2):
+    def __init__(
+        self,
+        datastore_name: str,
+        batch_size: int = 16,
+        workers: int = 0,
+        val_ratio: float = 0.2,
+        synthetic_weight: float = 1.0,
+    ):
         super().__init__()
         self.datastore_name = datastore_name
         self.batch_size = batch_size
         self.workers = workers
         self.val_ratio = val_ratio
+        self.synthetic_weight = synthetic_weight
 
     def setup(self, stage: Optional[str] = None):
-        full = PortraitDnaDataset(self.datastore_name)
+        full = PortraitDnaDataset(self.datastore_name, synthetic_weight=self.synthetic_weight)
         val_size = max(1, int(len(full) * self.val_ratio))
         train_size = len(full) - val_size
         self.train_set, self.val_set = random_split(full, [train_size, val_size])
@@ -390,11 +442,20 @@ class Net(pl.LightningModule):
         self.log(f"{stage}_gender_bce", penalty, prog_bar=False, on_step=False, on_epoch=True)
         return penalty
 
+    def _main_loss(self, preds: torch.Tensor, targets: torch.Tensor, sample_weights: torch.Tensor) -> torch.Tensor:
+        # `PerGeneMSELoss.forward` accepts `sample_weights`; plain
+        # `nn.MSELoss` (per_gene_loss=False) doesn't, so only pass it
+        # through when the sample weights actually differ from "all 1.0" --
+        # keeps the --per_gene_loss False fallback path unchanged.
+        if isinstance(self.loss_fn, PerGeneMSELoss):
+            return self.loss_fn(preds, targets, sample_weights)
+        return self.loss_fn(preds, targets)
+
     def training_step(self, batch, batch_idx):
-        images, targets = batch
+        images, targets, sample_weights = batch
         preds = self(images)
         loss = (
-            self.loss_fn(preds, targets)
+            self._main_loss(preds, targets, sample_weights)
             + self.hparams.diversity_weight * self._diversity_penalty(preds, "train")
             + self.hparams.gender_weight * self._gender_penalty(preds, targets, "train")
         )
@@ -403,10 +464,10 @@ class Net(pl.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        images, targets = batch
+        images, targets, sample_weights = batch
         preds = self(images)
         loss = (
-            self.loss_fn(preds, targets)
+            self._main_loss(preds, targets, sample_weights)
             + self.hparams.diversity_weight * self._diversity_penalty(preds, "val")
             + self.hparams.gender_weight * self._gender_penalty(preds, targets, "val")
         )
@@ -446,6 +507,7 @@ class experiment:
             batch_size=args.batch_size,
             workers=args.workers,
             val_ratio=args.val_ratio,
+            synthetic_weight=getattr(args, "synthetic_weight", 1.0),
         )
         self.net = Net(
             lr=args.lr,
